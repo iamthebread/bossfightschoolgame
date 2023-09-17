@@ -1474,6 +1474,1167 @@ this)}CreateWebGLText(){return this.CreateRendererText()}};
 
 }
 
+// ../lib/gfx/webgpu/webgpuRenderer.js
+{
+'use strict';const C3=self.C3;const glMatrix=self.glMatrix;const vec3=glMatrix.vec3;const mat4=glMatrix.mat4;const assert=self.assert;const GPUBufferUsage=self["GPUBufferUsage"];const GPUShaderStage=self["GPUShaderStage"];const GPUMapMode=self["GPUMapMode"];const GPUTextureUsage=self["GPUTextureUsage"];const DEFAULT_WEBGPURENDERER_OPTS={powerPreference:"default",depth:false,failIfMajorPerformanceCaveat:false,canSampleBackbuffer:false,usesBackgroundBlending:false,canSampleDepth:false};
+const MAX_VERTICES=42E3;const MAX_INDICES=MAX_VERTICES/2*3;const NUM_VERTEX_COMPONENTS=3;const MAX_POINTS=MAX_VERTICES/4;const MAX_COLORS=MAX_VERTICES/4;const LAST_QUAD_PTR=MAX_VERTICES/4-1;const LAST_POINT_PTR=MAX_POINTS*4-4*4;const FLAG_IN_DRAW=1<<0;const FLAG_DRAWING_POINTS=1<<1;const FLAG_SCISSOR_ENABLED=1<<2;const FLAG_SCISSOR_CHANGED=1<<3;const FLAG_DRAW_STATE_CHANGED=1<<4;const FLAG_PIPELINE_CHANGED=1<<5;const FLAG_TEX_BINDGROUP_CHANGED=1<<6;const FLAG_BACKTEX_BINDGROUP_CHANGED=1<<7;
+const FLAG_DEPTHTEX_BINDGROUP_CHANGED=1<<8;const FLAG_TRANSFORM_CHANGED=1<<9;const FLAG_VERTEX_UNIFORM_CHANGED=1<<10;const FLAG_FRAG_UNIFORM_CHANGED=1<<11;const FLAG_FRAG_C3PARAMS_CHANGED=1<<12;const FLAG_BUFFER_BINDGROUP_CHANGED=1<<13;const FLAG_DID_ADD_COMMAND=1<<14;const FLAG_CONTEXT_LOST=1<<15;const FLAG_MULTITEXTURE_ENABLED=1<<16;const FLAG_USE_DEPTH_BUFFER=1<<17;const FLAG_DEPTH_ENABLED=1<<18;const FLAG_RENDERTARGET_HAS_DEPTH=1<<19;const FLAG_CLEAR_DEPTH=1<<20;
+const FLAG_COPLANAR_STENCIL_PASS=1<<21;const FLAG_COPLANAR_COLOR_PASS=1<<22;const FLAG_CLEAR_STENCIL=1<<23;const FLAG_AUTOSIZE_DEPTH_BUFFER=1<<24;const FLAG_SUPPORTS_TIMESTAMP_QUERY=1<<25;const FLAG_USE_NORMALIZED_COORDS=1<<26;const FLAG_DID_CHANGE_TRANSFORM=1<<27;const CHANGED_FLAGS_MASK=FLAG_DRAW_STATE_CHANGED|FLAG_PIPELINE_CHANGED|FLAG_BUFFER_BINDGROUP_CHANGED|FLAG_TEX_BINDGROUP_CHANGED|FLAG_BACKTEX_BINDGROUP_CHANGED|FLAG_DEPTHTEX_BINDGROUP_CHANGED;
+const END_DRAW_FLAGS_MASK=CHANGED_FLAGS_MASK|FLAG_SCISSOR_CHANGED|FLAG_IN_DRAW;const NEW_RENDERPASS_FLAGS=CHANGED_FLAGS_MASK|FLAG_DID_ADD_COMMAND;const CHANGED_UNIFORM_BUFFER_MASK=FLAG_TRANSFORM_CHANGED|FLAG_VERTEX_UNIFORM_CHANGED|FLAG_FRAG_UNIFORM_CHANGED|FLAG_FRAG_C3PARAMS_CHANGED;const SIZEOF_F32=4;const defaultTexCoordsQuad=new C3.Quad(0,0,1,0,1,1,0,1);const tempVec2=C3.New(C3.Vector2);const tempRect=C3.New(C3.Rect);const tempRect2=C3.New(C3.Rect);const tempQuad=C3.New(C3.Quad);let DEBUG=false;
+function DebugLog(msg){console.log("[WebGPU] "+msg)}
+C3.Gfx.WebGPURenderer=class WebGPURenderer extends C3.Gfx.RendererBase{constructor(opts){super(opts);this._adapterOpts=null;this._adapter=null;this._adapterInfo=null;this._device=null;this._canvas=null;this._presentCtx=null;this._swapChainFormat="";this._swapChainTexture=null;this._swapChainTexView=null;this._viewportWidth=0;this._viewportHeight=0;this._matTransform=mat4.create();this._depthBuffer=null;this._nullDepthBuffer=null;this._depthBufferView=null;this._nullDepthBufferView=null;this._depthBufferBindGroup=
+null;this._nullDepthBufferBindGroup=null;this._depthBufferWidth=0;this._depthBufferHeight=0;this._vertexUniformBuffer=null;this._fragmentUniformBuffer=null;this._fragmentC3ParamsBuffer=null;this._fragmentDefaultCustomParamsBuffer=null;this._vertexBuffer=null;this._texcoordBuffer=null;this._colorBuffer=null;this._indexBuffer=null;this._pointBuffer=null;this._vertexUniformBufferLayout=C3.Gfx.WebGPUShaderProgram.GetVertexUniformBufferLayout();this._vertexUniformBufferSize=C3.Gfx.WebGPUShaderProgram.GetVertexUniformBufferSize();
+this._vertexUniformArrayBuffer=null;this._vertexUniformf32=null;this._fragUniformBufferLayout=C3.Gfx.WebGPUShaderProgram.GetFragmentUniformBufferLayout();this._fragUniformBufferSize=C3.Gfx.WebGPUShaderProgram.GetFragmentUniformBufferSize();this._fragUniformArrayBuffer=null;this._fragUniformf32=null;this._fragC3ParamsLayout=C3.Gfx.WebGPUShaderProgram.GetFragmentC3ParamsBufferLayout();this._fragC3ParamsSize=C3.Gfx.WebGPUShaderProgram.GetFragmentC3ParamsBufferSize();this._fragC3ParamsArrayBuffer=null;
+this._fragC3Paramsf32=null;this._fragC3Paramsu32=null;this._vertexData=new Float32Array(MAX_VERTICES*NUM_VERTEX_COMPONENTS);this._texcoordData=new Float32Array(MAX_VERTICES*3);this._colorData=new Float32Array(MAX_COLORS*4);this._indexData=new Uint16Array(MAX_INDICES);this._pointData=new Float32Array(MAX_POINTS*4);this._quadPtr=0;this._currentMultiTextureIndex=0;this._currentColor=C3.New(C3.Color,1,1,1,1);this._pointPtr=0;this._bufferManager=C3.New(C3.Gfx.WebGPUBufferManager,this);this._flags=FLAG_CONTEXT_LOST;
+this._drawFirstIndex=0;this._drawIndexCount=0;this._vertexUniformUpdateStart=0;this._vertexUniformUpdateEnd=0;this._fragUniformUpdateStart=0;this._fragUniformUpdateEnd=0;this._fragC3ParamsUpdateStart=0;this._fragC3ParamsUpdateEnd=0;this._scissorRect=C3.New(C3.Rect,0,0,0,0);this._currentColor2=C3.New(C3.Color,1,1,1,1);this._currentPointColor=C3.New(C3.Color,1,1,1,1);this._currentPointTexCoords=C3.New(C3.Rect,0,0,0,0);this._currentVertexZElevation=0;this._textureFormat="";this._bufferBindGroupLayout=
+null;this._defaultBufferBindGroup=null;this._textureBindGroupLayout=null;this._backTextureBindGroupLayout=null;this._depthTextureBindGroupLayout=null;this._nullTexture=null;this._currentTexture=null;this._currentTextureBindGroup=null;this._currentBackTexture=null;this._currentBackTextureBindGroup=null;this._currentDepthTextureBindGroup=null;this._currentBufferBindGroup=null;this._mipmapGeneratorPipeline=null;this._availableMultiTextures=new Set;this._nonFullMultiTexGroups=new Set;this._maxTextureSize=
+8192;this._pipelineLayout=null;this._defaultVertexModule=null;this._normVertexModule=null;this._currentProgram=null;this._currentBlendMode=0;this._currentMultisampleCount=0;this._mipmapGeneratorProgram=null;this._samplerMap=new Map;this._commandEncoder=null;this._currentRenderPass=null;this._commandBuffers=[];this._backbufferRenderTarget=null;this._currentRenderTarget=null;this._canSampleBackbuffer=false;this._usesBackgroundBlending=false;this._canSampleDepth=false;this._frameTimeQuerySet=null;this.ondevicelost=
+null;this.ondevicerestored=null;this._InitBlendModes()}IsWebGPU(){return true}_SetFlag(f,e){if(e)this._flags|=f;else this._flags&=~f}_IsFlagSet(f){return(this._flags&f)!==0}async Create(canvas,opts){opts=Object.assign({},DEFAULT_WEBGPURENDERER_OPTS,opts);if(!navigator["gpu"])throw new Error("renderer-unavailable (WebGPU not supported)");if(opts.depth)this._flags|=FLAG_USE_DEPTH_BUFFER;this._canSampleBackbuffer=!!opts.canSampleBackbuffer;this._usesBackgroundBlending=!!opts.usesBackgroundBlending;this._adapterOpts=
+{};this._canSampleDepth=!!(opts.depth&&opts.canSampleDepth);if(opts.powerPreference!=="default")this._adapterOpts["powerPreference"]=opts.powerPreference;this._canvas=canvas;this.FillIndexBufferData(this._indexData);await this._InitDevice(opts.failIfMajorPerformanceCaveat)}async _InitDevice(failIfMajorPerformanceCaveat){this._device=null;await this._TryGetDeviceOnCurrentAdapter(failIfMajorPerformanceCaveat);while(!this._device){this._adapter=null;await this._TryGetDeviceOnCurrentAdapter(failIfMajorPerformanceCaveat)}await this.InitState()}async _TryGetDeviceOnCurrentAdapter(failIfMajorPerformanceCaveat){if(!this._adapter){this._adapter=
+await navigator["gpu"]["requestAdapter"](this._adapterOpts);if(!this._adapter)throw new Error("renderer-unavailable (no WebGPU adapter available)");if(failIfMajorPerformanceCaveat&&this._adapter["isFallbackAdapter"])throw new Error("renderer-unavailable (WebGPU provided fallback adapter)");}const features=[];this._device=await this._adapter["requestDevice"]({"requiredFeatures":features});if(!this._device)return null;this._maxTextureSize=this._device["limits"]["maxTextureDimension2D"];this._SetFlag(FLAG_SUPPORTS_TIMESTAMP_QUERY,
+this._device["features"].has("timestamp-query"));this._device["lost"].then(info=>this._OnDeviceLost(info));this._SetFlag(FLAG_CONTEXT_LOST,false)}async _OnDeviceLost(info){console.log("[WebGPU] Device lost: ",info);super.OnDeviceOrContextLost();this._bufferManager.OnContextLost();C3.Gfx.WebGPURendererTexture.OnContextLost();C3.Gfx.WebGPURenderTarget.OnContextLost();C3.Gfx.RendererText.OnContextLost();this._swapChainFormat="";this._swapChainTexture=null;this._swapChainTexView=null;this._depthBuffer=
+null;this._depthBufferView=null;this._nullDepthBuffer=null;this._nullDepthBufferView=null;this._depthBufferBindGroup=null;this._nullDepthBufferBindGroup=null;this._vertexBuffer=null;this._texcoordBuffer=null;this._colorBuffer=null;this._indexBuffer=null;this._pointBuffer=null;this._vertexUniformBuffer=null;this._fragmentUniformBuffer=null;this._fragmentC3ParamsBuffer=null;this._fragmentDefaultCustomParamsBuffer=null;this._defaultBufferBindGroup=null;this._bufferBindGroupLayout=null;this._currentBufferBindGroup=
+null;this._textureBindGroupLayout=null;this._backTextureBindGroupLayout=null;this._depthTextureBindGroupLayout=null;this._pipelineLayout=null;this._currentProgram=null;this._nullTexture=null;this._currentTexture=null;this._currentTextureBindGroup=null;this._currentBackTexture=null;this._currentBackTextureBindGroup=null;this._currentDepthTextureBindGroup=null;this._defaultVertexModule=null;this._normVertexModule=null;this._backbufferRenderTarget=null;this._currentRenderTarget=null;this._mipmapGeneratorPipeline=
+null;this._frameTimeQuerySet=null;this._availableMultiTextures.clear();this._nonFullMultiTexGroups.clear();this._samplerMap.clear();for(const stateGroup of this._stateGroups.values())stateGroup.OnContextLost();this._device=null;this._adapter=null;this._adapterInfo=null;this._flags|=FLAG_CONTEXT_LOST;if(this.ondevicelost)this.ondevicelost();await this._InitDevice();for(const stateGroup of this._stateGroups.values())stateGroup.OnContextRestored(this);this.SetSize(this._width,this._height,true);if(this.ondevicerestored)this.ondevicerestored()}async InitState(){super.InitState();
+const device=this._device;this._swapChainFormat=navigator["gpu"]["getPreferredCanvasFormat"]();this._swapChainTexture=null;this._swapChainTexView=null;let swapChainTextureUsage=GPUTextureUsage["RENDER_ATTACHMENT"];if(this._canSampleBackbuffer)swapChainTextureUsage|=GPUTextureUsage["TEXTURE_BINDING"];if(this._usesBackgroundBlending)swapChainTextureUsage|=GPUTextureUsage["COPY_SRC"];if(this._swapChainFormat.startsWith("rgba8")||this._swapChainFormat.startsWith("bgra8"))this._textureFormat=this._swapChainFormat;
+else this._textureFormat="rgba8unorm";this._flags&=FLAG_USE_DEPTH_BUFFER|FLAG_SUPPORTS_TIMESTAMP_QUERY;this._flags|=CHANGED_UNIFORM_BUFFER_MASK;if(this._IsFlagSet(FLAG_USE_DEPTH_BUFFER))this._flags|=FLAG_DEPTH_ENABLED|FLAG_RENDERTARGET_HAS_DEPTH|FLAG_AUTOSIZE_DEPTH_BUFFER;this._quadPtr=0;this._currentBlendMode=0;this._currentMultisampleCount=0;this._currentColor.setRgba(1,1,1,1);this._currentColor2.setRgba(1,1,1,1);this._currentPointColor.setRgba(1,1,1,1);this._vertexUniformArrayBuffer=new ArrayBuffer(this._vertexUniformBufferSize);
+this._vertexUniformf32=new Float32Array(this._vertexUniformArrayBuffer);this._fragUniformArrayBuffer=new ArrayBuffer(this._fragUniformBufferSize);this._fragUniformf32=new Float32Array(this._fragUniformArrayBuffer);this._fragC3ParamsArrayBuffer=new ArrayBuffer(this._fragC3ParamsSize);this._fragC3Paramsf32=new Float32Array(this._fragC3ParamsArrayBuffer);this._fragC3Paramsu32=new Uint32Array(this._fragC3ParamsArrayBuffer);this._vertexBuffer=device["createBuffer"]({"label":"vertexbuffer","size":this._vertexData.byteLength,
+"usage":GPUBufferUsage["VERTEX"]|GPUBufferUsage["COPY_DST"]});this._texcoordBuffer=device["createBuffer"]({"label":"texcoordbuffer","size":this._texcoordData.byteLength,"usage":GPUBufferUsage["VERTEX"]|GPUBufferUsage["COPY_DST"]});this._colorBuffer=device["createBuffer"]({"label":"colorbuffer","size":this._colorData.byteLength,"usage":GPUBufferUsage["VERTEX"]|GPUBufferUsage["STORAGE"]|GPUBufferUsage["COPY_DST"]});this._indexBuffer=device["createBuffer"]({"label":"indexbuffer","mappedAtCreation":true,
+"size":this._indexData.byteLength,"usage":GPUBufferUsage["INDEX"]});const indexArrayBuffer=this._indexBuffer["getMappedRange"]();(new Uint16Array(indexArrayBuffer)).set(this._indexData);this._indexBuffer["unmap"]();this._pointBuffer=device["createBuffer"]({"label":"pointbuffer","size":this._pointData.byteLength,"usage":GPUBufferUsage["VERTEX"]|GPUBufferUsage["STORAGE"]|GPUBufferUsage["COPY_DST"]});this._bufferBindGroupLayout=device["createBindGroupLayout"]({"label":"bufferbindgrouplayout","entries":[{"binding":0,
+"visibility":GPUShaderStage["VERTEX"],"buffer":{"type":"uniform","minBindingSize":this._vertexUniformBufferSize}},{"binding":1,"visibility":GPUShaderStage["FRAGMENT"],"buffer":{"type":"uniform","minBindingSize":this._fragUniformBufferSize}},{"binding":2,"visibility":GPUShaderStage["VERTEX"],"buffer":{"type":"read-only-storage","minBindingSize":this._colorData.byteLength}},{"binding":3,"visibility":GPUShaderStage["VERTEX"],"buffer":{"type":"read-only-storage","minBindingSize":this._pointData.byteLength}},
+{"binding":4,"visibility":GPUShaderStage["FRAGMENT"],"buffer":{"type":"uniform","minBindingSize":this._fragC3ParamsSize}},{"binding":5,"visibility":GPUShaderStage["FRAGMENT"],"buffer":{"type":"uniform"}}]});const texBindGroupLayoutEntries=[];const multiTexLimit=C3.Gfx.WebGPUMultiTextureGroup.GetMultiTextureLimit();for(let i=0;i<multiTexLimit;++i)texBindGroupLayoutEntries.push({"binding":i*2,"visibility":GPUShaderStage["FRAGMENT"],"sampler":{"type":"filtering"}},{"binding":i*2+1,"visibility":GPUShaderStage["FRAGMENT"],
+"texture":{"sampleType":"float","viewDimension":"2d"}});this._textureBindGroupLayout=device["createBindGroupLayout"]({"label":"texturebindgrouplayout","entries":texBindGroupLayoutEntries});this._backTextureBindGroupLayout=device["createBindGroupLayout"]({"label":"backtexturebindgrouplayout","entries":[{"binding":0,"visibility":GPUShaderStage["FRAGMENT"],"sampler":{"type":"non-filtering"}},{"binding":1,"visibility":GPUShaderStage["FRAGMENT"],"texture":{"sampleType":"float","viewDimension":"2d"}}]});
+this._depthTextureBindGroupLayout=device["createBindGroupLayout"]({"label":"depthtexturebindgrouplayout","entries":[{"binding":0,"visibility":GPUShaderStage["FRAGMENT"],"sampler":{"type":"non-filtering"}},{"binding":1,"visibility":GPUShaderStage["FRAGMENT"],"texture":{"sampleType":"depth","viewDimension":"2d"}}]});this._pipelineLayout=device["createPipelineLayout"]({"bindGroupLayouts":[this._bufferBindGroupLayout,this._textureBindGroupLayout,this._backTextureBindGroupLayout,this._depthTextureBindGroupLayout]});
+const WebGPUShaderProgram=C3.Gfx.WebGPUShaderProgram;this._defaultVertexModule=device["createShaderModule"]({"label":"<default vertex module>","code":WebGPUShaderProgram.GetDefaultVertexShaderSource()});this._defaultVertexModule["getCompilationInfo"]().then(compilationInfo=>WebGPUShaderProgram.ReportShaderCompilationInfo("<default>","vertex",compilationInfo));this._normVertexModule=device["createShaderModule"]({"label":"<normalized vertex module>","code":WebGPUShaderProgram.GetNormalizedVertexShaderSource()});
+this._normVertexModule["getCompilationInfo"]().then(compilationInfo=>WebGPUShaderProgram.ReportShaderCompilationInfo("<normalized>","vertex",compilationInfo));const defaultShaders=await Promise.all([WebGPUShaderProgram.Create(this,{name:"<default>",src:WebGPUShaderProgram.GetTextureFillFragmentShaderSource(false),srcFragDepth:WebGPUShaderProgram.GetTextureFillFragmentShaderSource(true),vertexSrc:WebGPUShaderProgram.GetTextureFillVertexShaderSource(),normVertexSrc:WebGPUShaderProgram.GetNormalizedTextureFillVertexShaderSource()}),
+WebGPUShaderProgram.Create(this,{name:"<generate-mipmap>",src:WebGPUShaderProgram._GetMipmapGeneratorFragmentSource(),vertexSrc:WebGPUShaderProgram._GetMipmapGeneratorVertexSource()}),WebGPUShaderProgram.Create(this,{name:"<point>",src:WebGPUShaderProgram._GetPointFragmentSource(false),srcFragDepth:WebGPUShaderProgram._GetPointFragmentSource(true),vertexSrc:WebGPUShaderProgram._GetPointVertexSource()}),WebGPUShaderProgram.Create(this,{name:"<tilemap>",src:WebGPUShaderProgram._GetTilemapFragmentShaderSource(false),
+srcFragDepth:WebGPUShaderProgram._GetTilemapFragmentShaderSource(true)}),WebGPUShaderProgram.Create(this,{name:"<fill>",src:WebGPUShaderProgram._GetColorFillFragmentShaderSource()}),WebGPUShaderProgram.Create(this,{name:"<lineargradient>",src:WebGPUShaderProgram._GetLinearGradientFillFragmentShaderSource()}),WebGPUShaderProgram.Create(this,{name:"<penumbra>",src:WebGPUShaderProgram._GetPenumbraFillFragmentShaderSource()}),WebGPUShaderProgram.Create(this,{name:"<hardellipse>",src:WebGPUShaderProgram._GetHardEllipseFillFragmentShaderSource()}),
+WebGPUShaderProgram.Create(this,{name:"<hardellipseoutline>",src:WebGPUShaderProgram._GetHardEllipseOutlineFragmentShaderSource()}),WebGPUShaderProgram.Create(this,{name:"<smoothellipse>",src:WebGPUShaderProgram._GetSmoothEllipseFillFragmentShaderSource()}),WebGPUShaderProgram.Create(this,{name:"<smoothellipseoutline>",src:WebGPUShaderProgram._GetSmoothEllipseOutlineFragmentShaderSource()}),WebGPUShaderProgram.Create(this,{name:"<tilerandomization>",src:WebGPUShaderProgram.GetTileRandomizationFragmentShaderSource(false),
+srcFragDepth:WebGPUShaderProgram.GetTileRandomizationFragmentShaderSource(true)}),WebGPUShaderProgram.Create(this,{name:"<smoothline>",src:WebGPUShaderProgram._GetSmoothLineFillFragmentShaderSource()})]);this._spTextureFill=defaultShaders[0];this._mipmapGeneratorProgram=defaultShaders[1];this._spPoints=defaultShaders[2];this._spTilemapFill=defaultShaders[3];this._spColorFill=defaultShaders[4];this._spLinearGradientFill=defaultShaders[5];this._spPenumbraFill=defaultShaders[6];this._spHardEllipseFill=
+defaultShaders[7];this._spHardEllipseOutline=defaultShaders[8];this._spSmoothEllipseFill=defaultShaders[9];this._spSmoothEllipseOutline=defaultShaders[10];this._spTileRandomization=defaultShaders[11];this._spSmoothLineFill=defaultShaders[12];this._currentProgram=this._spTextureFill;this._flags|=FLAG_MULTITEXTURE_ENABLED;this._mipmapGeneratorPipeline=this._mipmapGeneratorProgram._GetMipmapGeneratorPipeline();this._vertexUniformBuffer=device["createBuffer"]({"label":"vertexuniformbuffer","size":this._vertexUniformBufferSize,
+"usage":GPUBufferUsage["UNIFORM"]|GPUBufferUsage["COPY_DST"]});this._fragmentUniformBuffer=device["createBuffer"]({"label":"fragmentuniformbuffer","size":this._fragUniformBufferSize,"usage":GPUBufferUsage["UNIFORM"]|GPUBufferUsage["COPY_DST"]});this._fragmentC3ParamsBuffer=device["createBuffer"]({"label":"fragmentc3paramsuniformbuffer","size":this._fragC3ParamsSize,"usage":GPUBufferUsage["UNIFORM"]|GPUBufferUsage["COPY_DST"]});this._fragmentDefaultCustomParamsBuffer=device["createBuffer"]({"label":"fragmentdefaultcustomparamsbuffer",
+"size":16,"usage":GPUBufferUsage["UNIFORM"]|GPUBufferUsage["COPY_DST"]});this._vertexUniformUpdateStart=0;this._vertexUniformUpdateEnd=this._vertexUniformBufferSize;this._UpdateTransformUniform();this._UpdatePointTexCoordsUniform();this._UpdateZElevationUniform();this._fragUniformUpdateStart=0;this._fragUniformUpdateEnd=this._fragUniformBufferSize;this._UpdateColor2Uniform();this._UpdatePointColorUniform();this._defaultBufferBindGroup=this._CreateBufferBindGroup(this._fragmentDefaultCustomParamsBuffer);
+this._currentBufferBindGroup=this._defaultBufferBindGroup;const nullTextureCanvas=C3.CreateCanvas(32,32);nullTextureCanvas.getContext("2d");this._nullTexture=await this.CreateStaticTextureAsync(nullTextureCanvas);this._currentTexture=null;this._currentTextureBindGroup=this._nullTexture._GetOwnTextureBindGroup();this._currentMultiTextureIndex=0;this._currentBackTexture=null;this._currentBackTextureBindGroup=this._nullTexture._GetBackTextureBindGroup();this._nullTexture._DisableMultiTexture();this._nullDepthBuffer=
+this._device["createTexture"]({"label":"nulldepthbuffer","size":[8,8,1],"format":this._GetDepthBufferFormat(),"usage":GPUTextureUsage["TEXTURE_BINDING"]});this._nullDepthBufferView=this._nullDepthBuffer["createView"]({"label":"nulldepthbufferview","aspect":"depth-only"});this._nullDepthBufferBindGroup=this._device["createBindGroup"]({"label":"nulldepthbufferbindgroup","layout":this._depthTextureBindGroupLayout,"entries":[{"binding":0,"resource":this._GetSampler({sampling:"nearest"})},{"binding":1,
+"resource":this._nullDepthBufferView}]});this._currentDepthTextureBindGroup=this._nullDepthBufferBindGroup;this._backbufferRenderTarget=C3.New(C3.Gfx.WebGPURenderTarget,this,true);this._backbufferRenderTarget.GetTexture()._BackbufferTextureSetProperties(swapChainTextureUsage,this._swapChainFormat);this._currentRenderTarget=this._backbufferRenderTarget;this._CreateCommandEncoder();if(!this._presentCtx)this._presentCtx=this._canvas.getContext("webgpu");this._presentCtx["configure"]({"device":device,
+"format":this._swapChainFormat,"usage":swapChainTextureUsage,"alphaMode":"premultiplied"});this._adapterInfo=await this._adapter["requestAdapterInfo"]();if(DEBUG)DebugLog("Initialised state")}_CreateBufferBindGroup(customParamsBuffer){return this._device["createBindGroup"]({"layout":this._bufferBindGroupLayout,"entries":[{"binding":0,"resource":{"buffer":this._vertexUniformBuffer}},{"binding":1,"resource":{"buffer":this._fragmentUniformBuffer}},{"binding":2,"resource":{"buffer":this._colorBuffer}},
+{"binding":3,"resource":{"buffer":this._pointBuffer}},{"binding":4,"resource":{"buffer":this._fragmentC3ParamsBuffer}},{"binding":5,"resource":{"buffer":customParamsBuffer}}]})}_GetDevice(){return this._device}_GetDefaultVertexModule(){return this._defaultVertexModule}_GetNormalizedVertexModule(){return this._normVertexModule}async CreateShaderProgram(shaderInfo){if(DEBUG)DebugLog(`Creating shader program '${shaderInfo.name}'`);const shaderProgram=await C3.Gfx.WebGPUShaderProgram.Create(this,shaderInfo);
+this._AddShaderProgram(shaderProgram);return shaderProgram}GetDisplayName(){return"webgpu"}GetSwapChainFormat(){return this._swapChainFormat}_GetDepthBufferFormat(){return"depth24plus-stencil8"}_GetSwapChainTexture(){return this._swapChainTexture}_GetSwapChainTexView(){return this._swapChainTexView}_CanSampleBackbuffer(){return this._canSampleBackbuffer}UsesBackgroundBlending(){return this._usesBackgroundBlending}_GetPipelineLayout(){return this._pipelineLayout}_GetTextureBindGroupLayout(){return this._textureBindGroupLayout}_GetBackTextureBindGroupLayout(){return this._backTextureBindGroupLayout}GetTextureFormat(){return this._textureFormat}GetMaxTextureSize(){return this._maxTextureSize}IsContextLost(){return this._IsFlagSet(FLAG_CONTEXT_LOST)}SupportsGPUProfiling(){return this._IsFlagSet(FLAG_SUPPORTS_TIMESTAMP_QUERY)}GetEstimatedTotalMemoryUsage(){return 0}SupportsNPOTTextures(){return true}GetBufferManager(){return this._bufferManager}SetSize(w,
+h,force){if(this._width===w&&this._height===h&&!force)return;if(DEBUG)DebugLog(`Setting size to ${w} x ${h}`);this.EndBatch();this._width=w;this._height=h;this._viewportWidth=w;this._viewportHeight=h;this._backbufferRenderTarget._CalculateProjection();this.SetProjectionMatrix(this._backbufferRenderTarget.GetProjectionMatrix());if(this._currentRenderTarget)this._currentRenderTarget._Resize(this._width,this._height);if(this._IsFlagSet(FLAG_USE_DEPTH_BUFFER)&&this._IsFlagSet(FLAG_AUTOSIZE_DEPTH_BUFFER))this._SetDepthBufferSize(w,
+h)}_SetDepthBufferSize(width,height){if(this._depthBuffer){if(this._depthBufferWidth===width&&this._depthBufferHeight===height)return;this._depthBuffer["destroy"]()}let depthUsage=GPUTextureUsage["RENDER_ATTACHMENT"];if(this._canSampleDepth)depthUsage|=GPUTextureUsage["TEXTURE_BINDING"];this._depthBuffer=this._device["createTexture"]({"label":"depthbuffer","size":[width,height,1],"format":this._GetDepthBufferFormat(),"usage":depthUsage});this._depthBufferView=this._depthBuffer["createView"]({"label":"depthbufferview"});
+if(this._canSampleDepth)this._depthBufferBindGroup=this._device["createBindGroup"]({"label":"depthbufferbindgroup","layout":this._depthTextureBindGroupLayout,"entries":[{"binding":0,"resource":this._GetSampler({sampling:"nearest"})},{"binding":1,"resource":this._depthBuffer["createView"]({"label":"depthbufferview","aspect":"depth-only"})}]});this._depthBufferWidth=width;this._depthBufferHeight=height}SetFixedSizeDepthBuffer(width,height){if(!this.UsesDepthBuffer())return;this._SetFlag(FLAG_AUTOSIZE_DEPTH_BUFFER,
+false);this._SetDepthBufferSize(width,height)}SetAutoSizeDepthBuffer(){if(!this.UsesDepthBuffer())return;this._SetFlag(FLAG_AUTOSIZE_DEPTH_BUFFER,true);this._SetDepthBufferSize(this._width,this._height)}SetProjectionMatrix(matP){if(mat4.exactEquals(this._matP,matP))return;mat4.copy(this._matP,matP);this._UpdateTransformUniform()}SetDefaultRenderTargetProjectionState(){this.SetProjectionMatrix(this._currentRenderTarget.GetProjectionMatrix())}SetModelViewMatrix(matMV){if(mat4.exactEquals(this._matMV,
+matMV))return;mat4.copy(this._matMV,matMV);this._UpdateTransformUniform()}ResetDidChangeTransformFlag(){this._SetFlag(FLAG_DID_CHANGE_TRANSFORM,false)}DidChangeTransform(){return this._IsFlagSet(FLAG_DID_CHANGE_TRANSFORM)}CreateStaticTexture(data,opts){if(data&&!C3.Gfx.WebGPURendererTexture.IsGPUImageCopyExternalImageSource(data)){const dataWidth=data.width||data.videoWidth;const dataHeight=data.height||data.videoHeight;const canvas=C3.CreateCanvas(dataWidth,dataHeight);const ctx=canvas.getContext("2d");
+ctx.drawImage(data,0,0,dataWidth,dataHeight);data=canvas}this.EndBatch();if(DEBUG)DebugLog(`Creating texture ${data?data.width:opts.width} x ${data?data.height:opts.height}`);const rendererTex=C3.New(C3.Gfx.WebGPURendererTexture,this);rendererTex._Create(data,opts);return rendererTex}async CreateStaticTextureAsync(data,opts){if(C3.Gfx.WebGPURendererTexture.IsGPUImageCopyExternalImageSource(data))return this.CreateStaticTexture(data,opts);else{if(!C3.Supports.ImageBitmapOptions)throw new Error("no support for ImageBitmapOptions");
+const imageBitmap=await createImageBitmap(data,{"premultiplyAlpha":"premultiply"});return this.CreateStaticTexture(imageBitmap,opts)}}_GetSampler(opts){const wrapX=opts.wrapX||"clamp-to-edge";const wrapY=opts.wrapY||"clamp-to-edge";const sampling=opts.sampling;let anisotropy=opts.anisotropy||0;if(sampling!=="trilinear")anisotropy=0;const key=`${wrapX},${wrapY},${sampling},${anisotropy}`;let ret=this._samplerMap.get(key);if(ret)return ret;const descriptor={"addressModeU":wrapX,"addressModeV":wrapY,
+"magFilter":"nearest","minFilter":"nearest","mipmapFilter":"nearest"};if(sampling==="bilinear"||sampling==="trilinear"){descriptor["magFilter"]="linear";descriptor["minFilter"]="linear"}if(sampling==="trilinear"){descriptor["mipmapFilter"]="linear";if(anisotropy>1)descriptor["maxAnisotropy"]=anisotropy}ret=this._device["createSampler"](descriptor);this._samplerMap.set(key,ret);return ret}_GetMipmapGeneratorPipeline(){return this._mipmapGeneratorPipeline}CreateDynamicTexture(width,height,opts){this.EndBatch();
+const rendererTex=C3.New(C3.Gfx.WebGPURendererTexture,this);rendererTex._CreateDynamic(width,height,opts);return rendererTex}UpdateTexture(data,rendererTex,opts){return rendererTex._Update(data,opts)}DeleteTexture(rendererTex){if(!rendererTex)return;rendererTex.SubtractReference();if(rendererTex.GetReferenceCount()>0)return;this.EndBatch();if(this._currentTexture===rendererTex)this.SetTexture(null);if(this._currentBackTexture===rendererTex)this.SetBackTexture(null);rendererTex._Delete()}_SetMultiTextureAvailable(rendererTex,
+available){if(available)this._availableMultiTextures.add(rendererTex);else this._availableMultiTextures.delete(rendererTex)}_SetMultiTextureGroupNonFull(mtg,available){if(available)this._nonFullMultiTexGroups.add(mtg);else this._nonFullMultiTexGroups.delete(mtg)}_TryCreateMultiTextureGroup(rendererTex){const textures=[rendererTex];const multiTexLimit=C3.Gfx.WebGPUMultiTextureGroup.GetMultiTextureLimit();for(const mtg of this._nonFullMultiTexGroups)mtg.Release();for(const tex of this._availableMultiTextures){if(textures.length>=
+multiTexLimit)break;if(tex===rendererTex)continue;textures.push(tex)}if(textures.length<2)return;C3.New(C3.Gfx.WebGPUMultiTextureGroup,this,textures)}Start(){if(DEBUG)DebugLog(`================== START FRAME ===================`);this._swapChainTexture=this._presentCtx["getCurrentTexture"]();this._swapChainTexView=this._swapChainTexture["createView"]({"label":"swapchaintextureview"});this._backbufferRenderTarget.GetTexture()._BackbufferTextureStartFrame()}Finish(){if(this._currentRenderPass===null&&
+this._backbufferRenderTarget._IsAwaitingClear())this._BeginRenderPass();super.Finish();this._bufferManager.MaybeCollectUnusedBuffers(this._frameNumber);this._backbufferRenderTarget.GetTexture()._BackbufferTextureEndFrame();this._swapChainTexture=null;this._swapChainTexView=null;if(DEBUG)DebugLog(`End of frame`);if(this._frameNumber>=10)DEBUG=false}_CreateCommandEncoder(){this._commandEncoder=this._device["createCommandEncoder"]();this._flags&=~FLAG_DID_ADD_COMMAND}StartFrameTiming(queryCount){if(!this.SupportsGPUProfiling())throw new Error("GPU profiling not supported");
+if(this._frameTimeQuerySet)throw new Error("already started frame timing");this._frameTimeQuerySet=C3.New(C3.Gfx.WebGPUTimeQuerySet,this,queryCount);return this._frameTimeQuerySet}WriteTimestamp(index){if(!this._frameTimeQuerySet)throw new Error("not started frame timing");this._MaybeEndRenderPass();if(DEBUG)DebugLog(`Writing timestamp index ${index} for frame ${this._frameNumber}`);this._commandEncoder["writeTimestamp"](this._frameTimeQuerySet._GetQuerySet(),index);this._flags|=FLAG_DID_ADD_COMMAND}_AddQuadToDrawBatch(){let q=
+this._quadPtr;if(q>LAST_QUAD_PTR){this.EndBatch();q=0}else if((this._flags&FLAG_IN_DRAW)!==0){this._drawIndexCount+=6;return}if(this._currentRenderPass===null)this._BeginRenderPass();this._flags|=FLAG_IN_DRAW;this._drawFirstIndex=q*6;this._drawIndexCount=6}_MaybeEndDrawBatch(){const flags=this._flags;if((flags&FLAG_IN_DRAW)===0)return;if(DEBUG){const updates=[];if(flags&FLAG_DRAW_STATE_CHANGED)updates.push("draw state");if(flags&FLAG_PIPELINE_CHANGED)updates.push("pipeline");if(flags&FLAG_TEX_BINDGROUP_CHANGED)updates.push("texture");
+if(flags&FLAG_BACKTEX_BINDGROUP_CHANGED)updates.push("background texture");if(flags&FLAG_DEPTHTEX_BINDGROUP_CHANGED)updates.push("depth texture");if(flags&FLAG_BUFFER_BINDGROUP_CHANGED)updates.push("buffer");if(flags&FLAG_SCISSOR_CHANGED)updates.push("scissor");let str="";if(updates.length>0)str+=`(Updated ${updates.join(", ")}) `;if((flags&FLAG_DRAWING_POINTS)!==0)str+=`Drawing ${this._drawIndexCount/6} points`;else str+=`Drawing ${this._drawIndexCount/6} quads`;DebugLog(str)}const renderPass=this._currentRenderPass;
+if((flags&FLAG_DRAW_STATE_CHANGED)!==0){const rt=this._currentRenderTarget;renderPass["setViewport"](0,0,rt.GetWidth(),rt.GetHeight(),0,1);renderPass["setIndexBuffer"](this._indexBuffer,"uint16");renderPass["setVertexBuffer"](0,this._vertexBuffer);renderPass["setVertexBuffer"](1,this._texcoordBuffer);if((flags&(FLAG_COPLANAR_STENCIL_PASS|FLAG_COPLANAR_COLOR_PASS))!==0)renderPass["setStencilReference"](1);if((flags&FLAG_SCISSOR_ENABLED)!==0){const sr=this._scissorRect;renderPass["setScissorRect"](sr.getLeft(),
+sr.getTop(),sr.width(),sr.height())}}if((flags&FLAG_PIPELINE_CHANGED)!==0){let variant=0;if((flags&FLAG_USE_NORMALIZED_COORDS)!==0)variant=4;else if((flags&FLAG_COPLANAR_STENCIL_PASS)!==0)variant=2;else if((flags&FLAG_COPLANAR_COLOR_PASS)!==0)variant=3;else if((flags&(FLAG_DEPTH_ENABLED|FLAG_RENDERTARGET_HAS_DEPTH))===(FLAG_DEPTH_ENABLED|FLAG_RENDERTARGET_HAS_DEPTH))variant=1;renderPass["setPipeline"](this._currentProgram.GetRenderPipelineForState(this._currentBlendMode,variant,this._currentMultisampleCount))}if((flags&
+FLAG_BUFFER_BINDGROUP_CHANGED)!==0)renderPass["setBindGroup"](0,this._currentBufferBindGroup);if((flags&FLAG_TEX_BINDGROUP_CHANGED)!==0)renderPass["setBindGroup"](1,this._currentTextureBindGroup);if((flags&FLAG_BACKTEX_BINDGROUP_CHANGED)!==0)renderPass["setBindGroup"](2,this._currentBackTextureBindGroup);if((flags&FLAG_DEPTHTEX_BINDGROUP_CHANGED)!==0)renderPass["setBindGroup"](3,this._currentDepthTextureBindGroup);if((flags&FLAG_SCISSOR_CHANGED)!==0)if((flags&FLAG_SCISSOR_ENABLED)!==0){const sr=this._scissorRect;
+renderPass["setScissorRect"](sr.getLeft(),sr.getTop(),sr.width(),sr.height())}else{const rt=this._currentRenderTarget;renderPass["setScissorRect"](0,0,rt.GetWidth(),rt.GetHeight())}renderPass["drawIndexed"](this._drawIndexCount,1,this._drawFirstIndex,0,0);this._flags&=~END_DRAW_FLAGS_MASK}_BeginRenderPass(){const flags=this._flags;if((flags&CHANGED_UNIFORM_BUFFER_MASK)!==0)this._WriteUniformBuffers();let renderPassOpts=null;if((flags&FLAG_COPLANAR_STENCIL_PASS)!==0)renderPassOpts=this._GetCoplanarStencilRenderPassOpts();
+else if((flags&FLAG_COPLANAR_COLOR_PASS)!==0)renderPassOpts=this._GetCoplanarColorRenderPassOpts();else renderPassOpts=this._GetStandardRenderPassOpts();this._currentRenderPass=this._commandEncoder["beginRenderPass"](renderPassOpts);this._flags|=NEW_RENDERPASS_FLAGS}_GetStandardRenderPassOpts(){const flags=this._flags;const currentRenderTarget=this._currentRenderTarget;const renderPassOpts={"colorAttachments":[{"view":currentRenderTarget._GetTextureView(),"loadOp":currentRenderTarget._IsAwaitingClear()?
+"clear":"load","clearValue":currentRenderTarget._GetClearColor().toJSON(),"storeOp":"store"}]};currentRenderTarget._SetIsAwaitingClear(false);if((flags&(FLAG_RENDERTARGET_HAS_DEPTH|FLAG_DEPTH_ENABLED))===(FLAG_RENDERTARGET_HAS_DEPTH|FLAG_DEPTH_ENABLED)){renderPassOpts["depthStencilAttachment"]={"view":this._depthBufferView,"depthLoadOp":(flags&FLAG_CLEAR_DEPTH)!==0?"clear":"load","depthClearValue":1,"depthStoreOp":"store","stencilLoadOp":"clear","stencilClearValue":0,"stencilStoreOp":"discard"};this._flags&=
+~FLAG_CLEAR_DEPTH}if(DEBUG)DebugLog(`Starting render pass to ${currentRenderTarget.IsBackBuffer()?"backbuffer":"texture"}, depth ${renderPassOpts["depthStencilAttachment"]?"enabled":"disabled"}, ${renderPassOpts["colorAttachments"][0]["loadOp"]==="load"?"continue":"clear"} color${renderPassOpts["depthStencilAttachment"]&&renderPassOpts["depthStencilAttachment"]["depthLoadOp"]!=="load"?", clear depth":""}`);return renderPassOpts}_GetCoplanarStencilRenderPassOpts(){const flags=this._flags;const renderPassOpts=
+{"colorAttachments":[],"depthStencilAttachment":{"view":this._depthBufferView,"depthLoadOp":(flags&FLAG_CLEAR_DEPTH)!==0?"clear":"load","depthClearValue":1,"depthStoreOp":"store","stencilLoadOp":(flags&FLAG_CLEAR_STENCIL)!==0?"clear":"load","stencilClearValue":0,"stencilStoreOp":"store"}};this._flags&=~(FLAG_CLEAR_DEPTH|FLAG_CLEAR_STENCIL);if(DEBUG)DebugLog(`Starting coplanar stencil renderpass${renderPassOpts["depthStencilAttachment"]["depthLoadOp"]==="load"?"":", clear depth"}${renderPassOpts["depthStencilAttachment"]["stencilLoadOp"]===
+"load"?"":", clear stencil"}`);return renderPassOpts}_GetCoplanarColorRenderPassOpts(){const currentRenderTarget=this._currentRenderTarget;const renderPassOpts={"colorAttachments":[{"view":currentRenderTarget._GetTextureView(),"loadOp":currentRenderTarget._IsAwaitingClear()?"clear":"load","clearValue":currentRenderTarget._GetClearColor().toJSON(),"storeOp":"store"}],"depthStencilAttachment":{"view":this._depthBufferView,"depthReadOnly":true,"stencilReadOnly":true}};currentRenderTarget._SetIsAwaitingClear(false);
+if(DEBUG)DebugLog(`Starting coplanar color renderpass to ${currentRenderTarget.IsBackBuffer()?"backbuffer":"texture"}, ${renderPassOpts["colorAttachments"][0]["loadOp"]==="load"?"continue":"clear"} color`);return renderPassOpts}_MaybeDoPendingClearRenderPass(renderTarget){if(!renderTarget._IsAwaitingClear())return;this._MaybeEndRenderPass();const renderPass=this._commandEncoder["beginRenderPass"]({"colorAttachments":[{"view":renderTarget._GetTextureView(),"loadOp":"clear","clearValue":renderTarget._GetClearColor().toJSON(),
+"storeOp":"store"}]});renderPass["end"]();this._flags|=FLAG_DID_ADD_COMMAND;renderTarget._SetIsAwaitingClear(false)}_MaybeEndRenderPass(){if(this._currentRenderPass===null)return;this._MaybeEndDrawBatch();if(DEBUG)DebugLog(`Ending render pass (to ${this._currentRenderTarget.IsBackBuffer()?"backbuffer":"texture"})`);this._currentRenderPass["end"]();this._currentRenderPass=null}EndBatch(isFinish=false){this._MaybeEndRenderPass();if(this._frameTimeQuerySet&&isFinish){this._frameTimeQuerySet.Resolve(this._commandEncoder);
+this._flags|=FLAG_DID_ADD_COMMAND}if((this._flags&FLAG_DID_ADD_COMMAND)!==0){this._commandBuffers.push(this._commandEncoder["finish"]());this._CreateCommandEncoder()}if(this._commandBuffers.length===0)return;if(DEBUG)DebugLog(`Ending batch`);this._WriteBuffers();if(DEBUG)DebugLog(`Submitting ${this._commandBuffers.length} commands`);this._device["queue"]["submit"](this._commandBuffers);C3.clearArray(this._commandBuffers);this._bufferManager.AfterSubmit();if(this._frameTimeQuerySet&&isFinish){this._frameTimeQuerySet.ReadResult();
+this._frameTimeQuerySet=null}}_WriteBuffers(){const queue=this._device["queue"];if(this._quadPtr>0){const quads=this._quadPtr;if(DEBUG)DebugLog(`Writing vertex buffers`);queue["writeBuffer"](this._vertexBuffer,0,this._vertexData.buffer,0,quads*12*SIZEOF_F32);queue["writeBuffer"](this._texcoordBuffer,0,this._texcoordData.buffer,0,quads*12*SIZEOF_F32);queue["writeBuffer"](this._colorBuffer,0,this._colorData.buffer,0,quads*4*SIZEOF_F32);this._quadPtr=0}if(this._pointPtr>0){if(DEBUG)DebugLog(`Writing point buffer`);
+queue["writeBuffer"](this._pointBuffer,0,this._pointData.buffer,0,this._pointPtr*SIZEOF_F32);this._pointPtr=0}}_UpdateTransformUniform(){this._flags|=FLAG_TRANSFORM_CHANGED|FLAG_DID_CHANGE_TRANSFORM;this._MarkVertexUniformBufferRangeChanged(this._vertexUniformBufferLayout.transform)}_UpdatePointTexCoordsUniform(){const ul=this._vertexUniformBufferLayout.pointTex;this._currentPointTexCoords.writeToTypedArray(this._vertexUniformf32,ul.offset/4);this._MarkVertexUniformBufferRangeChanged(ul)}_UpdateZElevationUniform(){const ul=
+this._vertexUniformBufferLayout.zElevation;this._vertexUniformf32[ul.offset/4]=this._currentVertexZElevation;this._MarkVertexUniformBufferRangeChanged(ul)}_MarkVertexUniformBufferRangeChanged(layoutDesc){const startByte=layoutDesc.offset;const endByte=layoutDesc.end;if((this._flags&FLAG_VERTEX_UNIFORM_CHANGED)!==0){this._vertexUniformUpdateStart=Math.min(this._vertexUniformUpdateStart,startByte);this._vertexUniformUpdateEnd=Math.max(this._vertexUniformUpdateEnd,endByte)}else{this._flags|=FLAG_VERTEX_UNIFORM_CHANGED;
+this._vertexUniformUpdateStart=startByte;this._vertexUniformUpdateEnd=endByte;this._MaybeEndRenderPass()}}_UpdateColor2Uniform(){this._UpdateFragmentUniformColor(this._currentColor2,this._fragUniformBufferLayout.color2)}_UpdatePointColorUniform(){this._UpdateFragmentUniformColor(this._currentPointColor,this._fragUniformBufferLayout.pointColor)}_UpdateFragmentUniformColor(color,layoutDesc){color.writeToTypedArray(this._fragUniformf32,layoutDesc.offset/4);this._MarkFragUniformBufferRangeChanged(layoutDesc)}_UpdateFragmentUniformVec2(theVec2,
+layoutDesc){theVec2.writeToTypedArray(this._fragUniformf32,layoutDesc.offset/4);this._MarkFragUniformBufferRangeChanged(layoutDesc)}_MarkFragUniformBufferRangeChanged(layoutDesc){const startByte=layoutDesc.offset;const endByte=layoutDesc.end;if((this._flags&FLAG_FRAG_UNIFORM_CHANGED)!==0){this._fragUniformUpdateStart=Math.min(this._fragUniformUpdateStart,startByte);this._fragUniformUpdateEnd=Math.max(this._fragUniformUpdateEnd,endByte)}else{this._flags|=FLAG_FRAG_UNIFORM_CHANGED;this._fragUniformUpdateStart=
+startByte;this._fragUniformUpdateEnd=endByte;this._MaybeEndRenderPass()}}_MaybeUpdateFragmentC3ParamsFloat(value,layoutDesc){if(this._fragC3Paramsf32[layoutDesc.offset/4]===Math.fround(value))return;this._fragC3Paramsf32[layoutDesc.offset/4]=value;this._MarkFragC3ParamsRangeChanged(layoutDesc)}_MaybeUpdateFragmentC3ParamsUint(value,layoutDesc){if(this._fragC3Paramsu32[layoutDesc.offset/4]===value)return;this._fragC3Paramsu32[layoutDesc.offset/4]=value;this._MarkFragC3ParamsRangeChanged(layoutDesc)}_MaybeUpdateFragmentC3ParamsRect(rect,
+layoutDesc){if(rect.equalsF32Array(this._fragC3Paramsf32,layoutDesc.offset/4))return;rect.writeToTypedArray(this._fragC3Paramsf32,layoutDesc.offset/4);this._MarkFragC3ParamsRangeChanged(layoutDesc)}_MarkFragC3ParamsRangeChanged(layoutDesc){const startByte=layoutDesc.offset;const endByte=layoutDesc.end;if((this._flags&FLAG_FRAG_C3PARAMS_CHANGED)!==0){this._fragC3ParamsUpdateStart=Math.min(this._fragC3ParamsUpdateStart,startByte);this._fragC3ParamsUpdateEnd=Math.max(this._fragC3ParamsUpdateEnd,endByte)}else{this._flags|=
+FLAG_FRAG_C3PARAMS_CHANGED;this._fragC3ParamsUpdateStart=startByte;this._fragC3ParamsUpdateEnd=endByte;this._MaybeEndRenderPass()}}_WriteUniformBuffers(){const flags=this._flags;if((flags&FLAG_TRANSFORM_CHANGED)!==0){if(DEBUG)DebugLog(`Updating transform`);mat4.multiply(this._matTransform,this._matP,this._matMV);this._vertexUniformf32.set(this._matTransform,this._vertexUniformBufferLayout.transform.offset/4)}if((flags&FLAG_VERTEX_UNIFORM_CHANGED)!==0){if(DEBUG)DebugLog(`Updating vertex uniform buffer`);
+this._bufferManager.UpdateBufferSubData(this._commandEncoder,this._vertexUniformBuffer,this._vertexUniformArrayBuffer,this._vertexUniformUpdateStart,this._vertexUniformUpdateEnd-this._vertexUniformUpdateStart)}if((flags&FLAG_FRAG_UNIFORM_CHANGED)!==0){if(DEBUG)DebugLog(`Updating fragment uniform buffer`);this._bufferManager.UpdateBufferSubData(this._commandEncoder,this._fragmentUniformBuffer,this._fragUniformArrayBuffer,this._fragUniformUpdateStart,this._fragUniformUpdateEnd-this._fragUniformUpdateStart)}if((flags&
+FLAG_FRAG_C3PARAMS_CHANGED)!==0){if(DEBUG)DebugLog(`Updating fragment C3Params buffer`);this._bufferManager.UpdateBufferSubData(this._commandEncoder,this._fragmentC3ParamsBuffer,this._fragC3ParamsArrayBuffer,this._fragC3ParamsUpdateStart,this._fragC3ParamsUpdateEnd-this._fragC3ParamsUpdateStart)}this._flags=flags&~CHANGED_UNIFORM_BUFFER_MASK|FLAG_DID_ADD_COMMAND}CreateRenderTarget(opts){let width=this._width;let height=this._height;let isDefaultSize=true;if(opts){if(typeof opts.width==="number"){width=
+opts.width;isDefaultSize=false}if(typeof opts.height==="number"){height=opts.height;isDefaultSize=false}}if(width<=0||height<=0)throw new Error("invalid size");this.EndBatch();const renderTarget=C3.New(C3.Gfx.WebGPURenderTarget,this);renderTarget._Create(width,height,Object.assign({isDefaultSize},opts));return renderTarget}SetRenderTarget(renderTarget,updateProjection=true){if(renderTarget===null)renderTarget=this._backbufferRenderTarget;if(this._currentRenderTarget===renderTarget)return;this._MaybeEndRenderPass();
+this._currentRenderTarget=renderTarget;this._SetFlag(FLAG_RENDERTARGET_HAS_DEPTH,renderTarget.HasDepthBuffer());if(renderTarget.IsDefaultSize()&&!renderTarget.IsBackBuffer())renderTarget._Resize(this._width,this._height);if(updateProjection)this.SetDefaultRenderTargetProjectionState()}InvalidateRenderTarget(renderTarget){}GetRenderTarget(){if(this._currentRenderTarget===this._backbufferRenderTarget)return null;else return this._currentRenderTarget}GetRenderTargetSize(renderTarget){if(renderTarget===
+null)return[this._width,this._height];else return[renderTarget.GetWidth(),renderTarget.GetHeight()]}GetBackbufferRenderTarget(){return this._backbufferRenderTarget}DeleteRenderTarget(renderTarget){this.EndBatch();if(this._currentRenderTarget===renderTarget)this.SetRenderTarget(null);const renderTex=renderTarget.GetTexture();if(this._currentTexture===renderTex)this.SetTexture(null);if(this._currentBackTexture===renderTex)this.SetBackTexture(null);renderTarget._Delete()}async ReadBackRenderTargetToImageData(renderTarget,
+forceSynchronous,areaRect){this.EndBatch();if(renderTarget===null)renderTarget=this._backbufferRenderTarget;const device=this._device;const rtWidth=renderTarget.GetWidth();const rtHeight=renderTarget.GetHeight();let x=0;let y=0;let areaWidth=rtWidth;let areaHeight=rtHeight;if(areaRect){x=C3.clamp(Math.floor(areaRect.getLeft()),0,rtWidth-1);y=C3.clamp(Math.floor(areaRect.getTop()),0,rtHeight-1);let w=areaRect.width();if(w===0)w=rtWidth-x;else w=C3.clamp(Math.floor(w),0,rtWidth-x);let h=areaRect.height();
+if(h===0)h=rtHeight-y;else h=C3.clamp(Math.floor(h),0,rtHeight-y);areaWidth=w;areaHeight=h}const commandEncoder=device["createCommandEncoder"]();const readbackTexture=renderTarget.GetTexture();let copyBufferFromTexture=readbackTexture._GetTexture();let convertedTexture=null;if(readbackTexture._GetFormat()==="rgba8unorm"){if(!readbackTexture.CanReadPixels())C3.NotYetImplemented()}else{convertedTexture=this._ConvertTextureFormat(readbackTexture,"rgba8unorm",commandEncoder);copyBufferFromTexture=convertedTexture}const imageBytesPerRow=
+areaWidth*4;const bufferBytesPerRow=Math.ceil(imageBytesPerRow/256)*256;const readbackBuffer=device["createBuffer"]({"size":bufferBytesPerRow*areaHeight,"usage":GPUBufferUsage["MAP_READ"]|GPUBufferUsage["COPY_DST"]});commandEncoder["copyTextureToBuffer"]({"texture":copyBufferFromTexture,"origin":[x,y,0]},{"buffer":readbackBuffer,"bytesPerRow":bufferBytesPerRow},[areaWidth,areaHeight,1]);const commandBuffer=commandEncoder["finish"]();device["queue"]["submit"]([commandBuffer]);if(convertedTexture)convertedTexture["destroy"]();
+await readbackBuffer["mapAsync"](self["GPUMapMode"]["READ"]);const srcArrayBuffer=readbackBuffer["getMappedRange"]();let imageData;if(bufferBytesPerRow===imageBytesPerRow)imageData=new ImageData(new Uint8ClampedArray(srcArrayBuffer),areaWidth,areaHeight);else{const destArrayBuffer=new ArrayBuffer(imageBytesPerRow*areaHeight);const destArr=new Uint8Array(destArrayBuffer);for(let y=0;y<areaHeight;++y){const srcOffset=y*bufferBytesPerRow;const destOffset=y*imageBytesPerRow;destArr.set(new Uint8Array(srcArrayBuffer,
+srcOffset,imageBytesPerRow),destOffset)}imageData=new ImageData(new Uint8ClampedArray(destArrayBuffer),areaWidth,areaHeight)}readbackBuffer["destroy"]();return imageData}_ConvertTextureFormat(srcTexture,toFormat,commandEncoder){const device=this._device;const width=srcTexture.GetWidth();const height=srcTexture.GetHeight();if(srcTexture._GetFormat()===toFormat)throw new Error("no conversion necessary");if(!srcTexture.IsSampled())C3.NotYetImplemented();const destTexture=device["createTexture"]({"size":[width,
+height,1],"format":toFormat,"usage":GPUTextureUsage["COPY_SRC"]|GPUTextureUsage["RENDER_ATTACHMENT"]});const convertPipeline=this._mipmapGeneratorProgram._GetMipmapGeneratorPipeline(toFormat);const convertBindGroupLayout=convertPipeline["getBindGroupLayout"](0);const convertSampler=this._GetSampler({sampling:"nearest"});const srcTextureView=srcTexture._GetTexture()["createView"]({"baseMipLevel":0,"mipLevelCount":1});const destTextureView=destTexture["createView"]({"baseMipLevel":0,"mipLevelCount":1});
+const passEncoder=commandEncoder["beginRenderPass"]({"colorAttachments":[{"view":destTextureView,"loadOp":"clear","clearValue":[0,0,0,0],"storeOp":"store"}]});const bindGroup=device["createBindGroup"]({"layout":convertBindGroupLayout,"entries":[{"binding":0,"resource":convertSampler},{"binding":1,"resource":srcTextureView}]});passEncoder["setPipeline"](convertPipeline);passEncoder["setBindGroup"](0,bindGroup);passEncoder["draw"](4);passEncoder["end"]();return destTexture}SetDepthEnabled(e){if((this._flags&
+FLAG_USE_DEPTH_BUFFER)===0)return;e=!!e;if((this._flags&FLAG_DEPTH_ENABLED)!==0===e)return;if((this._flags&FLAG_RENDERTARGET_HAS_DEPTH)!==0)this._MaybeEndRenderPass();this._SetFlag(FLAG_DEPTH_ENABLED,e)}IsDepthEnabled(){return this._IsFlagSet(FLAG_DEPTH_ENABLED)}UsesDepthBuffer(){return this._IsFlagSet(FLAG_USE_DEPTH_BUFFER)}SetDepthSamplingEnabled(e){if(!this._canSampleDepth)return;if(e&&this.IsDepthEnabled())throw new Error("depth still enabled");const depthBindGroup=e?this._depthBufferBindGroup:
+this._nullDepthBufferBindGroup;if(this._currentDepthTextureBindGroup===depthBindGroup)return;this._MaybeEndDrawBatch();this._currentDepthTextureBindGroup=depthBindGroup;this._flags|=FLAG_DEPTHTEX_BINDGROUP_CHANGED}Clear(c){this._MaybeEndRenderPass();this._currentRenderTarget._SetIsAwaitingClear(true);this._currentRenderTarget._GetClearColor().set(c)}ClearRgba(r,g,b,a){this._MaybeEndRenderPass();this._currentRenderTarget._SetIsAwaitingClear(true);this._currentRenderTarget._GetClearColor().setRgba(r,
+g,b,a)}ClearDepth(){if((this._flags&(FLAG_USE_DEPTH_BUFFER|FLAG_RENDERTARGET_HAS_DEPTH))!==(FLAG_USE_DEPTH_BUFFER|FLAG_RENDERTARGET_HAS_DEPTH))return;this._MaybeEndRenderPass();this._flags|=FLAG_CLEAR_DEPTH}SetScissorRect(x,y,w,h){x=Math.floor(x);y=Math.floor(y);w=Math.floor(w);h=Math.floor(h);if((this._flags&FLAG_SCISSOR_ENABLED)!==0&&this._scissorRect.equalsWH(x,y,w,h))return;this._MaybeEndDrawBatch();this._flags|=FLAG_SCISSOR_ENABLED|FLAG_SCISSOR_CHANGED;this._scissorRect.setWH(x,y,w,h)}RemoveScissorRect(){if((this._flags&
+FLAG_SCISSOR_ENABLED)===0)return;this._MaybeEndDrawBatch();this._flags&=~FLAG_SCISSOR_ENABLED;this._flags|=FLAG_SCISSOR_CHANGED}SetProgram(program){if(this._currentProgram===program)return;this._MaybeEndDrawBatch();this._currentProgram=program;this._currentStateGroup=null;this._flags|=FLAG_PIPELINE_CHANGED;this._SetMultiTexturingEnabled(program===this._spTextureFill)}_SetMultiTexturingEnabled(e){e=!!e;if((this._flags&FLAG_MULTITEXTURE_ENABLED)!==0===e)return;this._SetFlag(FLAG_MULTITEXTURE_ENABLED,
+e);const texture=this._currentTexture===null?this._nullTexture:this._currentTexture;this._ApplyTextureBindGroup(texture)}SetNormalizedCoordsProgramVariant(e){e=!!e;if((this._flags&FLAG_USE_NORMALIZED_COORDS)!==0===e)return;this._MaybeEndDrawBatch();this._SetFlag(FLAG_USE_NORMALIZED_COORDS,e);this._flags|=FLAG_PIPELINE_CHANGED}IsNormalizedCoordsProgramVariant(){return this._IsFlagSet(FLAG_USE_NORMALIZED_COORDS)}SetTexture(texture){if(texture===this._currentTexture)return;this._currentTexture=texture;
+if(texture===null)texture=this._nullTexture;this._ApplyTextureBindGroup(texture)}_ApplyTextureBindGroup(texture){if((this._flags&FLAG_MULTITEXTURE_ENABLED)!==0){this._SetTextureBindGroup(texture._GetMultiTextureBindGroup());this._currentMultiTextureIndex=texture._GetMultiTextureIndex()}else{this._SetTextureBindGroup(texture._GetOwnTextureBindGroup());this._currentMultiTextureIndex=0}}_SetTextureBindGroup(textureBindGroup){if(textureBindGroup===this._currentTextureBindGroup)return;this._MaybeEndDrawBatch();
+this._currentTextureBindGroup=textureBindGroup;this._flags|=FLAG_TEX_BINDGROUP_CHANGED}_OnTextureBindGroupChanged(texture){if(this._currentTexture!==texture)return;this._MaybeEndDrawBatch();this._currentTextureBindGroup=texture._GetOwnTextureBindGroup();this._flags|=FLAG_TEX_BINDGROUP_CHANGED}_OnMultiTextureBindGroupReleased(bindGroup){if(this._currentTextureBindGroup!==bindGroup)return;this._MaybeEndDrawBatch();const texture=this._currentTexture===null?this._nullTexture:this._currentTexture;this._currentTextureBindGroup=
+texture._GetOwnTextureBindGroup();this._currentMultiTextureIndex=0;this._flags|=FLAG_TEX_BINDGROUP_CHANGED}SetBackTexture(texture){if(texture===this._currentBackTexture)return;this._currentBackTexture=texture;if(texture===null)texture=this._nullTexture;this._MaybeEndDrawBatch();this._currentBackTextureBindGroup=texture._GetBackTextureBindGroup();this._flags|=FLAG_BACKTEX_BINDGROUP_CHANGED}CopyTextureToTexture(srcTex,destTex,x,y,w,h){const srcUsage=srcTex._GetUsage();const destUsage=destTex._GetUsage();
+if((srcUsage&GPUTextureUsage["COPY_SRC"])===0)throw new Error("source texture missing COPY_SRC usage");if((destUsage&GPUTextureUsage["COPY_DST"])===0)throw new Error("destination texture missing COPY_DST usage");if(srcTex===destTex)throw new Error("invalid destination");this._MaybeEndRenderPass();if(DEBUG)DebugLog(`Copying texture to texture, from (${x}, ${y}), size ${w} x ${h}`);this._commandEncoder["copyTextureToTexture"]({"texture":srcTex._GetTexture(),"origin":[x,y]},{"texture":destTex._GetTexture(),
+"origin":[x,y]},[w,h]);this._flags|=FLAG_DID_ADD_COMMAND}_ClampToSupportedMultisampleValues(multisampleCount){if(multisampleCount>=2)return 4;else return 1}SetRenderingToMultisampleCount(multisampleCount){multisampleCount=this._ClampToSupportedMultisampleValues(multisampleCount);if(this._currentMultisampleCount===multisampleCount)return;this._MaybeEndDrawBatch();this._currentMultisampleCount=multisampleCount;this._flags|=FLAG_PIPELINE_CHANGED}SetBlendMode(bm){if(bm===this._currentBlendMode)return;
+this._MaybeEndDrawBatch();this._currentBlendMode=bm;this._currentStateGroup=null;this._flags|=FLAG_PIPELINE_CHANGED}SetNamedBlendMode(bm){this.SetBlendMode(this.NamedBlendToNumber(bm))}SetAlphaBlend(){this.SetBlendMode(0)}SetCopyBlend(){this.SetBlendMode(3)}SetColorRgba(r,g,b,a){const currentColor=this._currentColor;if(currentColor.equalsRgba(r,g,b,a))return;currentColor.setRgba(r,g,b,a);this._currentStateGroup=null}SetOpacity(a){const currentColor=this._currentColor;if(currentColor.getA()===a)return;
+currentColor.setA(a);this._currentStateGroup=null}GetOpacity(){return this._currentColor.getA()}SetColor(c){const currentColor=this._currentColor;if(currentColor.equals(c))return;currentColor.set(c);this._currentStateGroup=null}ResetColor(){this.SetColorRgba(1,1,1,1)}GetColor(){return this._currentColor}Rect(r){this.Rect2(r.getLeft(),r.getTop(),r.getRight(),r.getBottom())}Rect2(left,top,right,bottom){this.Quad2(left,top,right,top,right,bottom,left,bottom)}Quad(quad){this.Quad4(quad,defaultTexCoordsQuad)}Quad2(tlx,
+tly,trx,try_,brx,bry,blx,bly){this._AddQuadToDrawBatch();const vd=this._vertexData;const qPtr=this._quadPtr++;let v=qPtr*12;const z=this._baseZ+this._currentZ;vd[v++]=tlx;vd[v++]=tly;vd[v++]=z;vd[v++]=trx;vd[v++]=try_;vd[v++]=z;vd[v++]=brx;vd[v++]=bry;vd[v++]=z;vd[v++]=blx;vd[v++]=bly;vd[v]=z;defaultTexCoordsQuad.writeToTypedArray3D(this._texcoordData,qPtr*12,this._currentMultiTextureIndex);this._currentColor.writeToTypedArray(this._colorData,qPtr*4)}Quad3(quad,rcTex){this._AddQuadToDrawBatch();const qPtr=
+this._quadPtr++;quad.writeToTypedArray3D(this._vertexData,qPtr*12,this._baseZ+this._currentZ);rcTex.writeAsQuadToTypedArray3D(this._texcoordData,qPtr*12,this._currentMultiTextureIndex);this._currentColor.writeToTypedArray(this._colorData,qPtr*4)}Quad4(quad,uv){this._AddQuadToDrawBatch();const qPtr=this._quadPtr++;quad.writeToTypedArray3D(this._vertexData,qPtr*12,this._baseZ+this._currentZ);uv.writeToTypedArray3D(this._texcoordData,qPtr*12,this._currentMultiTextureIndex);this._currentColor.writeToTypedArray(this._colorData,
+qPtr*4)}Quad3D(tlx,tly,tlz,trx,try_,trz,brx,bry,brz,blx,bly,blz,rcTex){this._AddQuadToDrawBatch();const vd=this._vertexData;const qPtr=this._quadPtr++;let v=qPtr*12;const z=this._baseZ+this._currentZ;vd[v++]=tlx;vd[v++]=tly;vd[v++]=z+tlz;vd[v++]=trx;vd[v++]=try_;vd[v++]=z+trz;vd[v++]=brx;vd[v++]=bry;vd[v++]=z+brz;vd[v++]=blx;vd[v++]=bly;vd[v]=z+blz;rcTex.writeAsQuadToTypedArray3D(this._texcoordData,qPtr*12,this._currentMultiTextureIndex);this._currentColor.writeToTypedArray(this._colorData,qPtr*4)}Quad3D2(tlx,
+tly,tlz,trx,try_,trz,brx,bry,brz,blx,bly,blz,uv){this._AddQuadToDrawBatch();const vd=this._vertexData;const qPtr=this._quadPtr++;let v=qPtr*12;const z=this._baseZ+this._currentZ;vd[v++]=tlx;vd[v++]=tly;vd[v++]=z+tlz;vd[v++]=trx;vd[v++]=try_;vd[v++]=z+trz;vd[v++]=brx;vd[v++]=bry;vd[v++]=z+brz;vd[v++]=blx;vd[v++]=bly;vd[v]=z+blz;uv.writeToTypedArray3D(this._texcoordData,qPtr*12,this._currentMultiTextureIndex);this._currentColor.writeToTypedArray(this._colorData,qPtr*4)}StartRenderingPoints(texRect){if(!this._currentPointTexCoords.equals(texRect)){this._currentPointTexCoords.copy(texRect);
+this._UpdatePointTexCoordsUniform()}const z=this._baseZ+this._currentZ;if(this._currentVertexZElevation!==z){this._currentVertexZElevation=z;this._UpdateZElevationUniform()}if(!this._currentPointColor.equalsIgnoringAlpha(this._currentColor)){this._currentPointColor.copyRgb(this._currentColor);this._UpdatePointColorUniform()}this._MaybeEndDrawBatch();this._drawIndexCount=0;this._flags|=FLAG_DRAWING_POINTS}FinishRenderingPoints(){if(this._drawIndexCount>0)this._MaybeEndDrawBatch();this._flags&=~FLAG_DRAWING_POINTS}Point(x,
+y,size,opacity){let p=this._pointPtr;if(p>LAST_POINT_PTR){this.EndBatch();p=0}if((this._flags&FLAG_IN_DRAW)!==0)this._drawIndexCount+=6;else{if(this._currentRenderPass===null)this._BeginRenderPass();this._flags|=FLAG_IN_DRAW;this._drawFirstIndex=p/4*6;this._drawIndexCount=6}const pd=this._pointData;pd[p++]=x;pd[p++]=y;pd[p++]=size;pd[p++]=opacity;this._pointPtr=p}SetGradientColor(c){if(this._currentColor2.equals(c))return;this._currentColor2.copy(c);this._UpdateColor2Uniform()}SetEllipseParams(pixelW,
+pixelH,outlineThickness=1){const fubl=this._fragUniformBufferLayout;const f32arr=this._fragUniformf32;tempVec2.set(pixelW,pixelH);if(!tempVec2.equalsF32Array(f32arr,fubl.pixelSize.offset/4))this._UpdateFragmentUniformVec2(tempVec2,fubl.pixelSize);if(f32arr[fubl.outlineThickness.offset/4]!==Math.fround(outlineThickness)){f32arr[fubl.outlineThickness.offset/4]=outlineThickness;this._MarkFragUniformBufferRangeChanged(fubl.outlineThickness)}}SetTilemapInfo(srcRect,textureWidth,textureHeight,tileWidth,
+tileHeight,tileSpacingX,tileSpacingY){const fubl=this._fragUniformBufferLayout;const f32arr=this._fragUniformf32;if(!srcRect.equalsF32Array(f32arr,fubl.srcRect.offset/4)){srcRect.writeToTypedArray(f32arr,fubl.srcRect.offset/4);this._MarkFragUniformBufferRangeChanged(fubl.srcRect)}tempVec2.set(tileWidth/textureWidth,tileHeight/textureHeight);if(!tempVec2.equalsF32Array(f32arr,fubl.tileSize.offset/4))this._UpdateFragmentUniformVec2(tempVec2,fubl.tileSize);tempVec2.set(tileSpacingX/textureWidth,tileSpacingY/
+textureHeight);if(!tempVec2.equalsF32Array(f32arr,fubl.tileSpacing.offset/4))this._UpdateFragmentUniformVec2(tempVec2,fubl.tileSpacing)}SetTileRandomizationInfo(textureWidth,textureHeight,xRandom,yRandom,angleRandom,blendMarginX,blendMarginY){const fubl=this._fragUniformBufferLayout;const f32arr=this._fragUniformf32;tempVec2.set(xRandom,yRandom);if(!tempVec2.equalsF32Array(f32arr,fubl.tileSize.offset/4))this._UpdateFragmentUniformVec2(tempVec2,fubl.tileSize);if(f32arr[fubl.outlineThickness.offset/
+4]!==Math.fround(angleRandom)){f32arr[fubl.outlineThickness.offset/4]=angleRandom;this._MarkFragUniformBufferRangeChanged(fubl.outlineThickness)}tempVec2.set(blendMarginX,blendMarginY);if(!tempVec2.equalsF32Array(f32arr,fubl.tileSpacing.offset/4))this._UpdateFragmentUniformVec2(tempVec2,fubl.tileSpacing)}SetProgramParameters(backTexture,destRect,srcRect,srcOriginRect,layoutRect,pixelWidth,pixelHeight,dpr,layerScale,layerAngle,time){const fubl=this._fragC3ParamsLayout;const currentProgram=this._currentProgram;
+time=time%10800;if(currentProgram.BlendsBackground())this.SetBackTexture(backTexture);if(currentProgram.UsesAnyC3ParamRect()){this._MaybeUpdateFragmentC3ParamsRect(destRect,fubl.destRect);this._MaybeUpdateFragmentC3ParamsRect(srcRect,fubl.srcRect);this._MaybeUpdateFragmentC3ParamsRect(srcOriginRect,fubl.srcOriginRect);this._MaybeUpdateFragmentC3ParamsRect(layoutRect,fubl.layoutRect)}this._MaybeUpdateFragmentC3ParamsFloat(dpr,fubl.devicePixelRatio);this._MaybeUpdateFragmentC3ParamsFloat(layerScale,
+fubl.layerScale);this._MaybeUpdateFragmentC3ParamsFloat(layerAngle,fubl.layerAngle);this._MaybeUpdateFragmentC3ParamsFloat(time,fubl.seconds);this._MaybeUpdateFragmentC3ParamsFloat(this.GetNearZ(),fubl.zNear);this._MaybeUpdateFragmentC3ParamsFloat(this.GetFarZ(),fubl.zFar)}SetProgramCustomParameters(params){if(!params)return;if(params.IsChanged()){this._MaybeEndRenderPass();params.UpdateBuffer(this._commandEncoder)}this._SetBufferBindGroup(params.GetBufferBindGroup())}SetProgramParameter_IsSrcTexRotated(isRotated){this._MaybeUpdateFragmentC3ParamsUint(isRotated?
+1:0,this._fragC3ParamsLayout.isSrcTexRotated)}_SetBufferBindGroup(bindGroup){if(bindGroup===this._currentBufferBindGroup)return;this._MaybeEndDrawBatch();this._currentBufferBindGroup=bindGroup;this._flags|=FLAG_BUFFER_BINDGROUP_CHANGED}_OnBufferBindGroupDestroyed(bufferBindGroup){if(this._currentBufferBindGroup===bufferBindGroup)this._SetBufferBindGroup(this._defaultBufferBindGroup)}CopyRenderTarget(renderTarget){if(renderTarget._IsAwaitingClear()){this._currentRenderTarget._SetIsAwaitingClear(true);
+this._currentRenderTarget._GetClearColor().set(renderTarget._GetClearColor());return}if(renderTarget.GetMultisampling()>=2&&this._currentRenderTarget.GetMultisampling()<2){this._ResolveMultisampledRenderTarget(renderTarget);return}this.ClearRgba(0,0,0,0);this.SetCopyBlend();this.ResetColor();this.DrawRenderTarget(renderTarget)}DrawRenderTarget(renderTarget){this._MaybeDoPendingClearRenderPass(renderTarget);const tex=renderTarget.GetTexture();this.SetTexture(tex);this.FullscreenQuad()}FullscreenQuad(){const isNormalized=
+this.IsNormalizedCoordsProgramVariant();if(!isNormalized)this.SetNormalizedCoordsProgramVariant(true);const quad=tempQuad;const tex=tempRect;quad.set(0,-1,0,-1,2,1,0,1);tex.set(0,-1,2,1);this.Quad3(quad,tex);if(!isNormalized)this.SetNormalizedCoordsProgramVariant(false)}_ResolveMultisampledRenderTarget(renderTarget){this._MaybeDoPendingClearRenderPass(renderTarget);this._MaybeEndRenderPass();const passEncoder=this._commandEncoder["beginRenderPass"]({"colorAttachments":[{"view":renderTarget.GetTexture()._GetTextureView(),
+"resolveTarget":this._currentRenderTarget.GetTexture()._GetTextureView(),"loadOp":"load","storeOp":"store"}]});passEncoder["end"]();this._flags|=FLAG_DID_ADD_COMMAND}CoplanarStartStencilPass(){this._MaybeEndRenderPass();this.SetDepthEnabled(true);this._flags|=FLAG_COPLANAR_STENCIL_PASS|FLAG_CLEAR_STENCIL}CoplanarStartColorPass(){this._MaybeEndRenderPass();this.SetDepthEnabled(false);this._flags&=~FLAG_COPLANAR_STENCIL_PASS;this._flags|=FLAG_COPLANAR_COLOR_PASS}CoplanarRestoreStandardRendering(){this._MaybeEndRenderPass();
+this.SetDepthEnabled(true);this._flags&=~FLAG_COPLANAR_COLOR_PASS}_InitBlendModes(){this._InitBlendModeData([["normal","one","one-minus-src-alpha"],["additive","one","one"],["xor","one","one-minus-src-alpha"],["copy","one","zero"],["destination-over","one-minus-dst-alpha","one"],["source-in","dst-alpha","zero"],["destination-in","zero","src-alpha"],["source-out","one-minus-dst-alpha","zero"],["destination-out","zero","one-minus-src-alpha"],["source-atop","dst-alpha","one-minus-src-alpha"],["destination-atop",
+"one-minus-dst-alpha","src-alpha"]])}GetAvailableAdapterFeatures(){return this._adapter?[...this._adapter["features"]]:[]}GetBasicAdapterInfo(){return this._adapterInfo}async RequestAdapterInfo(unmaskHints){if(!this._adapter)return null;try{return await this._adapter["requestAdapterInfo"](unmaskHints)}catch(err){console.warn("Unable to obtain WebGPU adapter information: ",err);return null}}GetBasicAdapterInfoString(){if(!this._adapterInfo)return"unknown/unknown";const vendor=this._adapterInfo["vendor"]||
+"unknown";const architecture=this._adapterInfo["architecture"]||"unknown";return vendor+"/"+architecture}};
+
+}
+
+// ../lib/gfx/webgpu/bufferManager.js
+{
+'use strict';const C3=self.C3;const ENABLE_RECYCLING=true;
+C3.Gfx.WebGPUBufferManager=class WebGPUBufferManager{constructor(renderer){this._renderer=renderer;this._buffers=new Map;this._recycleAfterSubmit=[];this._releaseAfterSubmit=[];this._destroyAfterSubmit=[];this._totalBufferCount=0;this._totalBufferSize=0;this._totalCreated=0;this._totalReleased=0;this._totalReturned=0;this._totalRecycled=0}GetRenderer(){return this._renderer}OnContextLost(){this._buffers.clear();C3.clearArray(this._recycleAfterSubmit);C3.clearArray(this._releaseAfterSubmit);C3.clearArray(this._destroyAfterSubmit)}_RoundBufferSizeClass(byteCount){return Math.max(C3.nextHighestPowerOfTwo(byteCount),
+16)}GetRecyclableBuffer(byteCount){this._totalReturned++;const sizeClass=this._RoundBufferSizeClass(byteCount);if(ENABLE_RECYCLING){const arr=this._buffers.get(sizeClass);if(typeof arr!=="undefined"&&arr.length>0){const ret=arr.pop();ret.MarkInUse();if(arr.length===0)this._buffers.delete(sizeClass);return ret}}this._totalBufferCount++;this._totalBufferSize+=sizeClass;this._totalCreated++;return C3.New(C3.Gfx.WebGPURecyclableBuffer,this,sizeClass)}_AddRecycledBuffer(recyclableBuffer){this._totalRecycled++;
+const sizeClass=recyclableBuffer.GetSize();const arr=this._buffers.get(sizeClass);if(typeof arr==="undefined")this._buffers.set(sizeClass,[recyclableBuffer]);else arr.push(recyclableBuffer)}_DestroyAfterSubmit(buffer){this._destroyAfterSubmit.push(buffer)}AfterSubmit(){for(const rcBuf of this._recycleAfterSubmit)rcBuf.Recycle();C3.clearArray(this._recycleAfterSubmit);for(const rcBuf of this._releaseAfterSubmit){this._totalBufferCount--;this._totalBufferSize-=rcBuf.GetSize();rcBuf.Release()}C3.clearArray(this._releaseAfterSubmit);
+for(const buf of this._destroyAfterSubmit)buf["destroy"]();C3.clearArray(this._destroyAfterSubmit)}MaybeCollectUnusedBuffers(frameNumber){if(frameNumber%30===0)this._CollectUnusedBuffers(frameNumber)}_CollectUnusedBuffers(frameNumber){for(const [sizeClass,arr]of this._buffers.entries()){let j=0;for(let i=0,len=arr.length;i<len;++i){const rcBuf=arr[i];if(rcBuf._ShouldCollect(frameNumber)){this._totalBufferCount--;this._totalBufferSize-=rcBuf.GetSize();rcBuf.Release();this._totalReleased++}else{arr[j]=
+rcBuf;++j}}if(j===0)this._buffers.delete(sizeClass);else C3.truncateArray(arr,j)}this._DebugLogBufferMap()}UpdateBufferSubData(encoder,destBuffer,srcArrayBuffer,byteOffset,byteCount){const recyclableBuffer=this.GetRecyclableBuffer(byteCount);const srcBuffer=recyclableBuffer.GetBuffer();const arrayBuffer=srcBuffer["getMappedRange"](0,byteCount);(new Uint8Array(arrayBuffer)).set(new Uint8Array(srcArrayBuffer,byteOffset,byteCount));srcBuffer["unmap"]();encoder["copyBufferToBuffer"](srcBuffer,0,destBuffer,
+byteOffset,byteCount);if(ENABLE_RECYCLING)this._recycleAfterSubmit.push(recyclableBuffer);else{recyclableBuffer.Discard();this._releaseAfterSubmit.push(recyclableBuffer)}}_DebugLogBufferMap(){this._totalCreated=0;this._totalReleased=0;this._totalReturned=0;this._totalRecycled=0}};
+
+}
+
+// ../lib/gfx/webgpu/recyclableBuffer.js
+{
+'use strict';const C3=self.C3;const GPUBufferUsage=self["GPUBufferUsage"];const GPUMapMode=self["GPUMapMode"];const assert=self.assert;const STATE_AVAILABLE=0;const STATE_IN_USE=1;const STATE_RECYCLING=2;
+C3.Gfx.WebGPURecyclableBuffer=class WebGPURecyclableBuffer{constructor(bufferManager,size){this._bufferManager=bufferManager;this._state=STATE_IN_USE;this._size=size;this._buffer=this.GetRenderer()._GetDevice()["createBuffer"]({"mappedAtCreation":true,"size":size,"usage":GPUBufferUsage["COPY_SRC"]|GPUBufferUsage["MAP_WRITE"]});this._recycledFrameNumber=0}GetRenderer(){return this._bufferManager.GetRenderer()}GetState(){return this._state}GetSize(){return this._size}GetBuffer(){return this._buffer}MarkInUse(){this._state=
+STATE_IN_USE}async Recycle(){this._state=STATE_RECYCLING;try{await this._buffer["mapAsync"](GPUMapMode["WRITE"])}catch(err){console.warn("[WebGPU] Error recycling buffer, assuming device was lost: ",err);return}if(this.GetRenderer().IsContextLost())return;this._state=STATE_AVAILABLE;this._recycledFrameNumber=this.GetRenderer().GetFrameNumber();this._bufferManager._AddRecycledBuffer(this)}Discard(){this._state=STATE_AVAILABLE}_ShouldCollect(frameNumber){return this._recycledFrameNumber<=frameNumber-
+25}Release(){this._buffer["destroy"]();this._buffer=null;this._bufferManager=null}};
+
+}
+
+// ../lib/gfx/webgpu/customParamsBuffer.js
+{
+'use strict';const C3=self.C3;const assert=self.assert;const GPUBufferUsage=self["GPUBufferUsage"];
+C3.Gfx.WebGPUEffectCustomParamsBuffer=class EffectCustomParamsBuffer{constructor(shaderProgram){const renderer=shaderProgram.GetRenderer();this._shaderProgram=shaderProgram;this._byteSize=shaderProgram.GetCustomParametersByteSize();this._arrayBuffer=new ArrayBuffer(this._byteSize);this._f32arr=new Float32Array(this._arrayBuffer);this._isChanged=false;this._buffer=renderer._GetDevice()["createBuffer"]({"size":this._byteSize,"usage":GPUBufferUsage["UNIFORM"]|GPUBufferUsage["COPY_DST"]});this._bufferBindGroup=
+renderer._CreateBufferBindGroup(this._buffer)}Release(){const renderer=this.GetRenderer();renderer._OnBufferBindGroupDestroyed(this._bufferBindGroup);this.GetRenderer().GetBufferManager()._DestroyAfterSubmit(this._buffer);this._buffer=null;this._shaderProgram=null;this._arrayBuffer=null;this._f32arr=null;this._bufferBindGroup=null}GetRenderer(){return this._shaderProgram.GetRenderer()}GetShaderProgram(){return this._shaderProgram}GetBufferBindGroup(){return this._bufferBindGroup}SetParameterValue(index,
+value){const paramInfo=this._shaderProgram._GetCustomParameterInfo(index);const paramType=paramInfo.type;const offsetf32=paramInfo.offset/4;const f32arr=this._f32arr;if(paramType==="color"){if(value.equalsRGBF32Array(f32arr,offsetf32))return;value.writeRGBToTypedArray(f32arr,offsetf32);this._isChanged=true}else if(paramType==="float"||paramType==="percent"){if(f32arr[offsetf32]===Math.fround(value))return;f32arr[offsetf32]=value;this._isChanged=true}else throw new Error(`unexpected shader param type '${paramType}'`);
+}IsChanged(){return this._isChanged}UpdateBuffer(encoder){this.GetRenderer().GetBufferManager().UpdateBufferSubData(encoder,this._buffer,this._arrayBuffer,0,this._byteSize);this._isChanged=false}};
+
+}
+
+// ../lib/gfx/webgpu/shaderProgram.js
+{
+'use strict';const C3=self.C3;const SIZEOF_F32=4;const SIZEOF_U32=4;const SIZEOF_VEC2_F32=2*SIZEOF_F32;const SIZEOF_VEC4_F32=4*SIZEOF_F32;const SIZEOF_MAT4_F32=16*SIZEOF_F32;function UpdateLayoutEndValues(o){for(const v of Object.values(o))v.end=v.offset+v.size}function makeNullFilledArray(count){const ret=[];for(let i=0;i<count;++i)ret.push(null);return ret}const vertexUniformBufferDeclaration=`
+struct Uniforms {
+	transform		: mat4x4<f32>,
+	pointTexStart	: vec2<f32>,
+	pointTexEnd		: vec2<f32>,
+	zElevation		: f32
+};
+@binding(0) @group(0) var<uniform> uniforms : Uniforms;
+`;const vubLayout={transform:{offset:0,size:SIZEOF_MAT4_F32,end:0},pointTex:{offset:64,size:SIZEOF_VEC4_F32,end:0},pointTexStart:{offset:64,size:SIZEOF_VEC2_F32,end:0},pointTexEnd:{offset:72,size:SIZEOF_VEC2_F32,end:0},zElevation:{offset:80,size:SIZEOF_F32,end:0}};UpdateLayoutEndValues(vubLayout);const vubSize=vubLayout.zElevation.end;const fragmentUniformBufferDeclaration=`
+struct Uniforms {
+	color2				: vec4<f32>,
+	pointColor 			: vec4<f32>,
+	tileSize			: vec2<f32>,
+	tileSpacing			: vec2<f32>,
+	srcRectStart		: vec2<f32>,
+	srcRectEnd			: vec2<f32>,
+	pixelSize			: vec2<f32>,
+	outlineThickness	: f32
+};
+@binding(1) @group(0) var<uniform> uniforms : Uniforms;
+`;const fubLayout={color2:{offset:0,size:SIZEOF_VEC4_F32,end:0},pointColor:{offset:16,size:SIZEOF_VEC4_F32,end:0},tileSize:{offset:32,size:SIZEOF_VEC2_F32,end:0},tileSpacing:{offset:40,size:SIZEOF_VEC2_F32,end:0},srcRect:{offset:48,size:SIZEOF_VEC4_F32,end:0},srcRectStart:{offset:48,size:SIZEOF_VEC2_F32,end:0},srcRectEnd:{offset:56,size:SIZEOF_VEC2_F32,end:0},pixelSize:{offset:64,size:SIZEOF_VEC2_F32,end:0},outlineThickness:{offset:72,size:SIZEOF_F32,end:0}};UpdateLayoutEndValues(fubLayout);
+const fubSize=fubLayout.outlineThickness.end;const c3ParamsUniformBufferDeclaration=`
+struct C3Params {
+	srcStart			: vec2<f32>,
+	srcEnd				: vec2<f32>,
+	srcOriginStart		: vec2<f32>,
+	srcOriginEnd		: vec2<f32>,
+	layoutStart			: vec2<f32>,
+	layoutEnd			: vec2<f32>,
+	destStart			: vec2<f32>,
+	destEnd				: vec2<f32>,
+	devicePixelRatio	: f32,
+	layerScale			: f32,
+	layerAngle			: f32,
+	seconds				: f32,
+	zNear				: f32,
+	zFar				: f32,
+	isSrcTexRotated		: u32
+};
+@binding(4) @group(0) var<uniform> c3Params : C3Params;
+
+fn c3_srcToNorm(p : vec2<f32>) -> vec2<f32>
+{
+	return (p - c3Params.srcStart) / (c3Params.srcEnd - c3Params.srcStart);
+}
+
+fn c3_normToSrc(p : vec2<f32>) -> vec2<f32>
+{
+	return fma(p, c3Params.srcEnd - c3Params.srcStart, c3Params.srcStart);
+}
+
+fn c3_clampToSrc(p : vec2<f32>) -> vec2<f32>
+{
+	return clamp(p, min(c3Params.srcStart, c3Params.srcEnd), max(c3Params.srcStart, c3Params.srcEnd));
+}
+
+fn c3_srcOriginToNorm(p : vec2<f32>) -> vec2<f32>
+{
+	return (p - c3Params.srcOriginStart) / (c3Params.srcOriginEnd - c3Params.srcOriginStart);
+}
+
+fn c3_normToSrcOrigin(p : vec2<f32>) -> vec2<f32>
+{
+	return fma(p, c3Params.srcOriginEnd - c3Params.srcOriginStart, c3Params.srcOriginStart);
+}
+
+fn c3_clampToSrcOrigin(p : vec2<f32>) -> vec2<f32>
+{
+	return clamp(p, min(c3Params.srcOriginStart, c3Params.srcOriginEnd), max(c3Params.srcOriginStart, c3Params.srcOriginEnd));
+}
+
+fn c3_getLayoutPos(p : vec2<f32>) -> vec2<f32>
+{
+	return fma(p - c3Params.srcOriginStart, (c3Params.layoutEnd - c3Params.layoutStart) / (c3Params.srcOriginEnd - c3Params.srcOriginStart), c3Params.layoutStart);
+}
+
+fn c3_srcToDest(p : vec2<f32>) -> vec2<f32>
+{
+	return fma(p - c3Params.srcStart, (c3Params.destEnd - c3Params.destStart) / (c3Params.srcEnd - c3Params.srcStart), c3Params.destStart);
+}
+
+fn c3_clampToDest(p : vec2<f32>) -> vec2<f32>
+{
+	return clamp(p, min(c3Params.destStart, c3Params.destEnd), max(c3Params.destStart, c3Params.destEnd));
+}
+
+fn c3_linearizeDepth(depthSample : f32) -> f32
+{
+	var d : f32 = (depthSample + 1.0) / 2.0;	// map [-1, 1] to [0, 1] - not sure why needed
+	return c3Params.zNear * c3Params.zFar / (c3Params.zFar + d * (c3Params.zNear - c3Params.zFar));
+}
+`;const C3PARAMS_TERMS_REFERENCING_SRC_RECTS=["srcStart","srcEnd","srcOriginStart","srcOriginEnd","c3_srcToNorm","c3_normToSrc","c3_clampToSrc","c3_srcOriginToNorm","c3_normToSrcOrigin","c3_clampToSrcOrigin","c3_getLayoutPos","c3_srcToDest"];const C3PARAMS_TERMS_REFERENCING_OTHER_RECTS=["layoutStart","layoutEnd","destStart","destEnd","c3_clampToDest"];
+const c3ParamsLayout={srcRect:{offset:0,size:SIZEOF_VEC4_F32,end:0},srcStart:{offset:0,size:SIZEOF_VEC2_F32,end:0},srcEnd:{offset:8,size:SIZEOF_VEC2_F32,end:0},srcOriginRect:{offset:16,size:SIZEOF_VEC4_F32,end:0},srcOriginStart:{offset:16,size:SIZEOF_VEC2_F32,end:0},srcOriginEnd:{offset:24,size:SIZEOF_VEC2_F32,end:0},layoutRect:{offset:32,size:SIZEOF_VEC4_F32,end:0},layoutStart:{offset:32,size:SIZEOF_VEC2_F32,end:0},layoutEnd:{offset:40,size:SIZEOF_VEC2_F32,end:0},destRect:{offset:48,size:SIZEOF_VEC4_F32,
+end:0},destStart:{offset:48,size:SIZEOF_VEC2_F32,end:0},destEnd:{offset:56,size:SIZEOF_VEC2_F32,end:0},devicePixelRatio:{offset:64,size:SIZEOF_F32,end:0},layerScale:{offset:68,size:SIZEOF_F32,end:0},layerAngle:{offset:72,size:SIZEOF_F32,end:0},seconds:{offset:76,size:SIZEOF_F32,end:0},zNear:{offset:80,size:SIZEOF_F32,end:0},zFar:{offset:84,size:SIZEOF_F32,end:0},isSrcTexRotated:{offset:88,size:SIZEOF_U32,end:0}};UpdateLayoutEndValues(c3ParamsLayout);const c3ParamsSize=c3ParamsLayout.isSrcTexRotated.end;
+const fragmentInputStructDeclaration=`
+struct FragmentInput {
+	@location(0) fragUV : vec2<f32>,
+	@location(1) fragColor : vec4<f32>,
+	@builtin(position) fragPos : vec4<f32>
+};
+
+fn c3_getBackUV(fragPos : vec2<f32>, texBack : texture_2d<f32>) -> vec2<f32>
+{
+	return fragPos / vec2<f32>(textureDimensions(texBack));
+}
+
+fn c3_getDepthUV(fragPos : vec2<f32>, texDepth : texture_depth_2d) -> vec2<f32>
+{
+	return fragPos / vec2<f32>(textureDimensions(texDepth));
+}
+`;const fragmentOutputStructDeclaration=`
+struct FragmentOutput {
+	@location(0) color : vec4<f32>
+};
+`;const shaderCustomParamSizes=new Map([["float",4],["percent",4],["color",12]]);const shaderCustomParamAlignSizes=new Map([["float",4],["percent",4],["color",16]]);const c3WGSLUtilityFunctionsLib=`
+fn c3_premultiply(c : vec4<f32>) -> vec4<f32>
+{
+	return vec4<f32>(c.rgb * c.a, c.a);
+}
+
+fn c3_unpremultiply(c : vec4<f32>) -> vec4<f32>
+{
+	if (c.a == 0.0)
+	{
+		return vec4<f32>(0.0);
+	}
+	
+	return vec4<f32>(c.rgb / c.a, c.a);
+}
+
+fn c3_grayscale(rgb : vec3<f32>) -> f32
+{
+	return dot(rgb, vec3<f32>(0.299, 0.587, 0.114));
+}
+
+fn c3_getPixelSize(t : texture_2d<f32>) -> vec2<f32>
+{
+	return vec2<f32>(1.0) / vec2<f32>(textureDimensions(t));
+}
+
+fn c3_clamp2(v : vec2<f32>, l : f32, u : f32) -> vec2<f32>
+{
+	return clamp(v, vec2<f32>(l), vec2<f32>(u));
+}
+
+fn c3_mod(x : f32, y : f32) -> f32
+{
+	return x - y * floor(x / y);
+}
+
+fn c3_mod2(x : vec2<f32>, y : vec2<f32>) -> vec2<f32>
+{
+	return x - y * floor(x / y);
+}
+
+fn c3_RGBtoHSL(color : vec3<f32>) -> vec3<f32>
+{
+	var hsl : vec3<f32> = vec3<f32>(0.0);
+	
+	var fmin : f32 = min(min(color.r, color.g), color.b);
+	var fmax : f32 = max(max(color.r, color.g), color.b);
+	var delta : f32 = fmax - fmin;
+
+	hsl.z = (fmax + fmin) / 2.0;
+
+	if (delta == 0.0)
+	{
+		hsl.x = 0.0;
+		hsl.y = 0.0;
+	}
+	else 
+	{
+		if (hsl.z < 0.5)
+		{
+			hsl.y = delta / (fmax + fmin);
+		}
+		else
+		{
+			hsl.y = delta / (2.0 - fmax - fmin);
+		}
+		
+		var dR : f32 = (((fmax - color.r) / 6.0) + (delta / 2.0)) / delta;
+		var dG : f32 = (((fmax - color.g) / 6.0) + (delta / 2.0)) / delta;
+		var dB : f32 = (((fmax - color.b) / 6.0) + (delta / 2.0)) / delta;
+
+		if (color.r == fmax)
+		{
+			hsl.x = dB - dG;
+		}
+		else if (color.g == fmax)
+		{
+			hsl.x = (1.0 / 3.0) + dR - dB;
+		}
+		else if (color.b == fmax)
+		{
+			hsl.x = (2.0 / 3.0) + dG - dR;
+		}
+
+		if (hsl.x < 0.0)
+		{
+			hsl.x = hsl.x + 1.0;
+		}
+		else if (hsl.x > 1.0)
+		{
+			hsl.x = hsl.x - 1.0;
+		}
+	}
+
+	return hsl;
+}
+
+fn c3_hueToRGB(f1 : f32, f2 : f32, hue_ : f32) -> f32
+{
+	var hue : f32 = hue_;
+	if (hue < 0.0)
+	{
+		hue = hue + 1.0;
+	}
+	else if (hue > 1.0)
+	{
+		hue = hue - 1.0;
+	}
+		
+	var ret : f32;
+	
+	if ((6.0 * hue) < 1.0)
+	{
+		ret = f1 + (f2 - f1) * 6.0 * hue;
+	}
+	else if ((2.0 * hue) < 1.0)
+	{
+		ret = f2;
+	}
+	else if ((3.0 * hue) < 2.0)
+	{
+		ret = f1 + (f2 - f1) * ((2.0 / 3.0) - hue) * 6.0;
+	}
+	else
+	{
+		ret = f1;
+	}
+	
+	return ret;
+}
+
+fn c3_HSLtoRGB(hsl : vec3<f32>) -> vec3<f32>
+{
+	var rgb : vec3<f32> = vec3<f32>(hsl.z);
+	
+	if (hsl.y != 0.0)
+	{
+		var f2 : f32;
+		
+		if (hsl.z < 0.5)
+		{
+			f2 = hsl.z * (1.0 + hsl.y);
+		}
+		else
+		{
+			f2 = (hsl.z + hsl.y) - (hsl.y * hsl.z);
+		}
+			
+		var f1 : f32 = 2.0 * hsl.z - f2;
+		
+		rgb.r = c3_hueToRGB(f1, f2, hsl.x + (1.0 / 3.0));
+		rgb.g = c3_hueToRGB(f1, f2, hsl.x);
+		rgb.b = c3_hueToRGB(f1, f2, hsl.x - (1.0 / 3.0));
+	}
+	
+	return rgb;
+}
+`;
+C3.Gfx.WebGPUShaderProgram=class WebGPUShaderProgram extends C3.Gfx.ShaderProgramBase{constructor(renderer,shaderInfo){super(renderer,shaderInfo);this._fragmentModule=shaderInfo.fragmentModule;this._fragmentModuleFragDepth=shaderInfo.fragmentModuleFragDepth;this._vertexModule=shaderInfo.vertexModule;this._normVertexModule=shaderInfo.normVertexModule;this._renderPipelines=makeNullFilledArray(55);this._multisampleRenderPipelines=new Map;this._mipmapPipelineCache=new Map;this._usesAnyC3ParamRect=false;this._usesIsSrcTexRotated=
+false;this._parameters=[];this._customParamsByteSize=0;if(shaderInfo.parameters){let currentOffset=0;for(const p of shaderInfo.parameters){const type=p[2];if(!shaderCustomParamSizes.has(type))throw new Error(`unrecognized effect param type '${type}'`);const paramSize=shaderCustomParamSizes.get(type);const paramAlignSize=shaderCustomParamAlignSizes.get(type);const alignDiff=currentOffset%paramAlignSize;if(alignDiff!==0)currentOffset+=paramAlignSize-alignDiff;this._parameters.push({type,offset:currentOffset,
+size:paramSize,end:currentOffset+paramSize});currentOffset+=paramSize}this._customParamsByteSize=Math.ceil(currentOffset/16)*16}}static async Create(renderer,shaderInfo){const device=renderer._GetDevice();const name=shaderInfo.name;const originalSrc=shaderInfo.src;const fragmentSrc=C3.Gfx.WebGPUShaderProgram._PreprocessFragmentShaderCode(originalSrc);const fragmentModule=device["createShaderModule"]({"label":name,"code":fragmentSrc});let fragmentModuleFragDepth=null;if(shaderInfo.srcFragDepth){const fragmentSrcFragDepth=
+C3.Gfx.WebGPUShaderProgram._PreprocessFragmentShaderCode(shaderInfo.srcFragDepth);fragmentModuleFragDepth=device["createShaderModule"]({"label":name,"code":fragmentSrcFragDepth})}fragmentModule["getCompilationInfo"]().then(compilationInfo=>C3.Gfx.WebGPUShaderProgram.ReportShaderCompilationInfo(name,"fragment",compilationInfo));let vertexModule;const vertexSrc=shaderInfo.vertexSrc;if(vertexSrc){vertexModule=device["createShaderModule"]({"label":name,"code":vertexSrc});vertexModule["getCompilationInfo"]().then(compilationInfo=>
+C3.Gfx.WebGPUShaderProgram.ReportShaderCompilationInfo(name,"vertex",compilationInfo))}else vertexModule=renderer._GetDefaultVertexModule();let normVertexModule;const normVertexSrc=shaderInfo.normVertexSrc;if(normVertexSrc){normVertexModule=device["createShaderModule"]({"label":name,"code":normVertexSrc});normVertexModule["getCompilationInfo"]().then(compilationInfo=>C3.Gfx.WebGPUShaderProgram.ReportShaderCompilationInfo(name,"vertex (norm)",compilationInfo))}else normVertexModule=renderer._GetNormalizedVertexModule();
+const ret=C3.New(C3.Gfx.WebGPUShaderProgram,renderer,Object.assign({fragmentModule,fragmentModuleFragDepth,vertexModule,normVertexModule},shaderInfo));ret._usesAnySrcRectOrPixelSize=originalSrc.includes("%%C3PARAMS_STRUCT%%")&&C3PARAMS_TERMS_REFERENCING_SRC_RECTS.some(t=>originalSrc.includes(t));ret._usesAnyC3ParamRect=ret._usesAnySrcRectOrPixelSize||originalSrc.includes("%%C3PARAMS_STRUCT%%")&&C3PARAMS_TERMS_REFERENCING_OTHER_RECTS.some(t=>originalSrc.includes(t));ret._usesIsSrcTexRotated=originalSrc.includes("%%C3PARAMS_STRUCT%%")&&
+originalSrc.includes("isSrcTexRotated");if(name!=="<generate-mipmap>"){const crpNoDepthPromise=ret._CreateRenderPipelineAsync(0,0,0);let crpDepthPromise=null;if(renderer.UsesDepthBuffer())crpDepthPromise=ret._CreateRenderPipelineAsync(0,1,0);const [rpNoDepth,rpDepth]=await Promise.all([crpNoDepthPromise,crpDepthPromise]);ret._renderPipelines[0]=rpNoDepth;if(rpDepth)ret._renderPipelines[1]=rpDepth}return ret}static _PreprocessFragmentShaderCode(src){return C3.StringSubstituteMap(src,{"%%SAMPLERFRONT_BINDING%%":"@binding(0) @group(1)",
+"%%TEXTUREFRONT_BINDING%%":"@binding(1) @group(1)","%%SAMPLERBACK_BINDING%%":"@binding(0) @group(2)","%%TEXTUREBACK_BINDING%%":"@binding(1) @group(2)","%%SAMPLERDEPTH_BINDING%%":"@binding(0) @group(3)","%%TEXTUREDEPTH_BINDING%%":"@binding(1) @group(3)","%%SHADERPARAMS_BINDING%%":"@binding(5) @group(0)","%%FRAGMENTINPUT_STRUCT%%":fragmentInputStructDeclaration,"%%FRAGMENTOUTPUT_STRUCT%%":fragmentOutputStructDeclaration,"%%C3PARAMS_STRUCT%%":c3ParamsUniformBufferDeclaration,"%%C3_UTILITY_FUNCTIONS%%":c3WGSLUtilityFunctionsLib})}static ReportShaderCompilationInfo(name,
+shaderType,compilationInfo){for(const message of compilationInfo["messages"]){const logStr=`[WebGPU] Message (${message["type"]}) compiling ${shaderType} shader '${name}': ${message["message"]} (line ${message["lineNum"]}, pos ${message["linePos"]})`;if(message.type==="error")console.error(logStr);else if(message.type==="warning")console.warn(logStr);else console.log(logStr)}}Release(){this._fragmentModule=null;this._fragmentModuleFragDepth=null;this._vertexModule=null;this._normVertexModule=null;
+for(let i=0,len=this._renderPipelines.length;i<len;++i)this._renderPipelines[i]=null;this._multisampleRenderPipelines.clear();this._mipmapPipelineCache.clear();super.Release()}_GetDevice(){return this._renderer._GetDevice()}_GetPipelineLayout(){return this._renderer._GetPipelineLayout()}GetRenderer(){return this._renderer}UsesAnyC3ParamRect(){return this._usesAnyC3ParamRect}UsesIsSrcTexRotated(){return this._usesIsSrcTexRotated}GetParameterCount(){return this._parameters.length}GetParameterType(paramIndex){if(paramIndex<
+0||paramIndex>=this._parameters.length)return null;return this._parameters[paramIndex].type}GetCustomParametersByteSize(){return this._customParamsByteSize}_GetCustomParameterInfo(paramIndex){return this._parameters[paramIndex]}_GetRenderPipelineDescriptor(blendMode,variant,multisampleCount){const [srcBlend,destBlend]=this._renderer._GetBlendByIndex(blendMode);const ret={"label":`${this.GetName()} blendMode ${blendMode} variant ${variant} multisampleCount ${multisampleCount}`,"layout":this._GetPipelineLayout(),
+"vertex":{"module":variant===4?this._normVertexModule:this._vertexModule,"entryPoint":"main","buffers":[{"arrayStride":3*SIZEOF_F32,"attributes":[{"shaderLocation":0,"offset":0,"format":"float32x3"}]},{"arrayStride":3*SIZEOF_F32,"attributes":[{"shaderLocation":1,"offset":0,"format":"float32x3"}]}]},"fragment":{"module":this._fragmentModule,"entryPoint":"main","targets":[{"format":this._renderer.GetSwapChainFormat(),"blend":{"color":{"srcFactor":srcBlend,"dstFactor":destBlend},"alpha":{"srcFactor":srcBlend,
+"dstFactor":destBlend}}}]}};if(multisampleCount>=2)[ret["multisample"]={"count":multisampleCount}];if(variant===1){ret["fragment"]["module"]=this._fragmentModuleFragDepth||this._fragmentModule;ret["depthStencil"]={"format":this._renderer._GetDepthBufferFormat(),"depthWriteEnabled":true,"depthCompare":"less-equal"}}else if(variant===2){ret["fragment"]["module"]=this._fragmentModuleFragDepth||this._fragmentModule;ret["fragment"]["targets"]=[];const stencilTestState={"compare":"always","failOp":"keep",
+"depthFailOp":"keep","passOp":"replace"};ret["depthStencil"]={"format":this._renderer._GetDepthBufferFormat(),"depthWriteEnabled":true,"depthCompare":"less-equal","stencilFront":stencilTestState,"stencilBack":stencilTestState,"stencilReadMask":1,"stencilWriteMask":1}}else if(variant===3){ret["fragment"]["module"]=this._fragmentModuleFragDepth||this._fragmentModule;const stencilTestState={"compare":"equal","failOp":"keep","depthFailOp":"keep","passOp":"keep"};ret["depthStencil"]={"format":this._renderer._GetDepthBufferFormat(),
+"depthWriteEnabled":false,"depthCompare":"always","stencilFront":stencilTestState,"stencilBack":stencilTestState,"stencilReadMask":1,"stencilWriteMask":0}}return ret}_CreateRenderPipeline(blendMode,variant,multisampleCount){return this._GetDevice()["createRenderPipeline"](this._GetRenderPipelineDescriptor(blendMode,variant,multisampleCount))}_CreateRenderPipelineAsync(blendMode,variant,multisampleCount){return this._GetDevice()["createRenderPipelineAsync"](this._GetRenderPipelineDescriptor(blendMode,
+variant,multisampleCount))}GetRenderPipelineForState(blendMode,variant,multisampleCount){const pipelineIndex=blendMode*5+variant;if(multisampleCount<2){let ret=this._renderPipelines[pipelineIndex];if(ret===null){ret=this._CreateRenderPipeline(blendMode,variant,multisampleCount);this._renderPipelines[pipelineIndex]=ret}return ret}else{let arr=this._multisampleRenderPipelines.get(multisampleCount);if(!Array.isArray(arr)){arr=makeNullFilledArray(55);this._multisampleRenderPipelines.set(multisampleCount,
+arr)}let ret=arr[pipelineIndex];if(ret===null){ret=this._CreateRenderPipeline(blendMode,variant,multisampleCount);arr[pipelineIndex]=ret}return ret}}static GetVertexUniformBufferLayout(){return vubLayout}static GetVertexUniformBufferSize(){return Math.ceil(vubSize/16)*16}static GetFragmentUniformBufferLayout(){return fubLayout}static GetFragmentUniformBufferSize(){return Math.ceil(fubSize/16)*16}static GetFragmentC3ParamsBufferLayout(){return c3ParamsLayout}static GetFragmentC3ParamsBufferSize(){return Math.ceil(c3ParamsSize/
+16)*16}static GetDefaultVertexShaderSource(){return`
+		${vertexUniformBufferDeclaration}
+
+		struct ColorData {
+			data : array<vec4<f32>>
+		};
+		@binding(2) @group(0) var<storage> colorBuffer : ColorData;
+
+		struct VertexInput {
+			@builtin(vertex_index) VertexIndex : u32,
+			@location(0) position : vec3<f32>,
+			@location(1) uv : vec3<f32>
+		};
+
+		struct VertexOutput {
+			@builtin(position) Position : vec4<f32>,
+			@location(0) fragUV : vec2<f32>,
+			@location(1) fragColor : vec4<f32>
+		};
+
+		@vertex
+		fn main(input : VertexInput) -> VertexOutput {
+			var output : VertexOutput;
+			output.Position = uniforms.transform * vec4<f32>(input.position, 1.0);
+			output.fragUV = input.uv.xy;
+			output.fragColor = colorBuffer.data[input.VertexIndex / u32(4)];
+			return output;
+		}`}static GetNormalizedVertexShaderSource(){return`
+		struct ColorData {
+			data : array<vec4<f32>>
+		};
+		@binding(2) @group(0) var<storage> colorBuffer : ColorData;
+
+		struct VertexInput {
+			@builtin(vertex_index) VertexIndex : u32,
+			@location(0) position : vec3<f32>,
+			@location(1) uv : vec3<f32>
+		};
+
+		struct VertexOutput {
+			@builtin(position) Position : vec4<f32>,
+			@location(0) fragUV : vec2<f32>,
+			@location(1) fragColor : vec4<f32>
+		};
+
+		@vertex
+		fn main(input : VertexInput) -> VertexOutput {
+			var output : VertexOutput;
+			var p = input.position;
+			p.y = 1.0 - p.y;
+			output.Position = vec4<f32>(p.xy * 2.0 - 1.0, p.z, 1.0);
+			output.fragUV = input.uv.xy;
+			output.fragColor = colorBuffer.data[input.VertexIndex / u32(4)];
+			return output;
+		}`}static GetTextureFillVertexShaderSource(){return`
+		${vertexUniformBufferDeclaration}
+
+		struct ColorData {
+			data : array<vec4<f32>>
+		};
+		@binding(2) @group(0) var<storage> colorBuffer : ColorData;
+
+		struct VertexInput {
+			@builtin(vertex_index) VertexIndex : u32,
+			@location(0) position : vec3<f32>,
+			@location(1) uv : vec3<f32>
+		};
+
+		struct VertexOutput {
+			@builtin(position) Position : vec4<f32>,
+			@location(0) fragUV : vec3<f32>,
+			@location(1) fragColor : vec4<f32>
+		};
+
+		@vertex
+		fn main(input : VertexInput) -> VertexOutput {
+			var output : VertexOutput;
+			output.Position = uniforms.transform * vec4<f32>(input.position, 1.0);
+			output.fragUV = input.uv;
+			output.fragColor = colorBuffer.data[input.VertexIndex / u32(4)];
+			return output;
+		}`}static GetNormalizedTextureFillVertexShaderSource(){return`
+		struct ColorData {
+			data : array<vec4<f32>>
+		};
+		@binding(2) @group(0) var<storage> colorBuffer : ColorData;
+
+		struct VertexInput {
+			@builtin(vertex_index) VertexIndex : u32,
+			@location(0) position : vec3<f32>,
+			@location(1) uv : vec3<f32>
+		};
+
+		struct VertexOutput {
+			@builtin(position) Position : vec4<f32>,
+			@location(0) fragUV : vec3<f32>,
+			@location(1) fragColor : vec4<f32>
+		};
+
+		@vertex
+		fn main(input : VertexInput) -> VertexOutput {
+			var output : VertexOutput;
+			var p = input.position;
+			p.y = 1.0 - p.y;
+			output.Position = vec4<f32>(p.xy * 2.0 - 1.0, p.z, 1.0);
+			output.fragUV = input.uv;
+			output.fragColor = colorBuffer.data[input.VertexIndex / u32(4)];
+			return output;
+		}`}static GetTextureFillFragmentShaderSource(useFragDepth){return`
+		@binding(0) @group(1) var sampler0 : sampler;
+		@binding(1) @group(1) var texture0 : texture_2d<f32>;
+		@binding(2) @group(1) var sampler1 : sampler;
+		@binding(3) @group(1) var texture1 : texture_2d<f32>;
+		@binding(4) @group(1) var sampler2 : sampler;
+		@binding(5) @group(1) var texture2 : texture_2d<f32>;
+		@binding(6) @group(1) var sampler3 : sampler;
+		@binding(7) @group(1) var texture3 : texture_2d<f32>;
+		@binding(8) @group(1) var sampler4 : sampler;
+		@binding(9) @group(1) var texture4 : texture_2d<f32>;
+		@binding(10) @group(1) var sampler5 : sampler;
+		@binding(11) @group(1) var texture5 : texture_2d<f32>;
+		@binding(12) @group(1) var sampler6 : sampler;
+		@binding(13) @group(1) var texture6 : texture_2d<f32>;
+		@binding(14) @group(1) var sampler7 : sampler;
+		@binding(15) @group(1) var texture7 : texture_2d<f32>;
+		@binding(16) @group(1) var sampler8 : sampler;
+		@binding(17) @group(1) var texture8 : texture_2d<f32>;
+		@binding(18) @group(1) var sampler9 : sampler;
+		@binding(19) @group(1) var texture9 : texture_2d<f32>;
+		@binding(20) @group(1) var sampler10 : sampler;
+		@binding(21) @group(1) var texture10 : texture_2d<f32>;
+		@binding(22) @group(1) var sampler11 : sampler;
+		@binding(23) @group(1) var texture11 : texture_2d<f32>;
+		@binding(24) @group(1) var sampler12 : sampler;
+		@binding(25) @group(1) var texture12 : texture_2d<f32>;
+		@binding(26) @group(1) var sampler13 : sampler;
+		@binding(27) @group(1) var texture13 : texture_2d<f32>;
+
+		struct FragmentInput {
+			@location(0) fragUV : vec3<f32>,
+			@location(1) fragColor : vec4<f32>,
+			@builtin(position) fragPos: vec4<f32>
+		};
+
+		struct FragmentOutput {
+			@location(0) color : vec4<f32>,
+			${useFragDepth?"@builtin(frag_depth) fragDepth: f32":""} 
+		};
+
+		@fragment
+		fn main(input : FragmentInput) -> FragmentOutput {
+			var output : FragmentOutput;
+			var texXy : vec2<f32> = input.fragUV.xy;
+			var texIndex : f32 = input.fragUV.z;
+			var c : vec4<f32>;
+
+			let dx = dpdx(texXy);
+			let dy = dpdy(texXy);
+			
+			if (texIndex < 6.5)
+			{
+				if (texIndex < 2.5)
+				{
+					if (texIndex < 0.5)			{	c = textureSampleGrad(texture0, sampler0, texXy, dx, dy);	}
+					else
+					{
+						if (texIndex < 1.5)		{	c = textureSampleGrad(texture1, sampler1, texXy, dx, dy);	}
+						else					{	c = textureSampleGrad(texture2, sampler2, texXy, dx, dy);	}
+					}						
+				}
+				else
+				{
+					if (texIndex < 4.5)
+					{
+						if (texIndex < 3.5)		{	c = textureSampleGrad(texture3, sampler3, texXy, dx, dy);	}
+						else					{	c = textureSampleGrad(texture4, sampler4, texXy, dx, dy);	}
+					}
+					else
+					{
+						if (texIndex < 5.5)		{	c = textureSampleGrad(texture5, sampler5, texXy, dx, dy);	}
+						else					{	c = textureSampleGrad(texture6, sampler6, texXy, dx, dy);	}
+					}
+				}
+			}
+			else
+			{
+				if (texIndex < 9.5)
+				{
+					if (texIndex < 7.5)			{	c = textureSampleGrad(texture7, sampler7, texXy, dx, dy);	}
+					else
+					{
+						if (texIndex < 8.5)		{	c = textureSampleGrad(texture8, sampler8, texXy, dx, dy);	}
+						else					{	c = textureSampleGrad(texture9, sampler9, texXy, dx, dy);	}
+					}						
+				}
+				else
+				{
+					if (texIndex < 11.5)
+					{
+						if (texIndex < 10.5)	{	c = textureSampleGrad(texture10, sampler10, texXy, dx, dy);	}
+						else					{	c = textureSampleGrad(texture11, sampler11, texXy, dx, dy);	}
+					}
+					else
+					{
+						if (texIndex < 12.5)	{	c = textureSampleGrad(texture12, sampler12, texXy, dx, dy);	}
+						else					{	c = textureSampleGrad(texture13, sampler13, texXy, dx, dy);	}
+					}
+				}
+			}
+
+			output.color = c * input.fragColor;
+			${useFragDepth?"output.fragDepth = select(input.fragPos.z, 1.0, output.color.a == 0.0);":""}
+			return output;
+		}`}static _GetMipmapGeneratorVertexSource(){return`
+		struct VertexInput {
+			@builtin(vertex_index) VertexIndex : u32
+		};
+		
+		struct VertexOutput {
+			@builtin(position) Position : vec4<f32>,
+			@location(0) fragUV : vec2<f32>
+		};
+
+		@vertex
+		fn main(input : VertexInput) -> VertexOutput {
+
+			var pos : array<vec2<f32>, 4> = array<vec2<f32>, 4>(
+				vec2<f32>(-1.0, 1.0),
+				vec2<f32>(1.0, 1.0),
+				vec2<f32>(-1.0, -1.0),
+				vec2<f32>(1.0, -1.0));
+			
+			var output : VertexOutput;
+			var p : vec2<f32> = pos[input.VertexIndex];
+			output.Position = vec4<f32>(p, 0.0, 1.0);
+			output.fragUV = p / 2.0 + 0.5;
+			return output;
+		}`}static _GetMipmapGeneratorFragmentSource(){return`
+		@binding(0) @group(0) var sampler0 : sampler;
+		@binding(1) @group(0) var texture0 : texture_2d<f32>;
+
+		struct FragmentInput {
+			@location(0) fragUV : vec2<f32>
+		};
+
+		struct FragmentOutput {
+			@location(0) color : vec4<f32>
+		};
+
+		@fragment
+		fn main(input : FragmentInput) -> FragmentOutput {
+			var output : FragmentOutput;
+			output.color = textureSample(texture0, sampler0, vec2<f32>(input.fragUV.x, 1.0 - input.fragUV.y));
+			return output;
+		}`}_GetMipmapGeneratorPipeline(targetFormat){if(!targetFormat)targetFormat=this._renderer.GetTextureFormat();let pipeline=this._mipmapPipelineCache.get(targetFormat);if(!pipeline){pipeline=this._GetDevice()["createRenderPipeline"]({"label":"<mipmap generator>","layout":"auto","vertex":{"module":this._vertexModule,"entryPoint":"main"},"primitive":{"topology":"triangle-strip","stripIndexFormat":"uint16"},"fragment":{"module":this._fragmentModule,"entryPoint":"main","targets":[{"format":targetFormat,
+"blend":{"color":{"srcFactor":"one","dstFactor":"zero"},"alpha":{"srcFactor":"one","dstFactor":"zero"}}}]}});this._mipmapPipelineCache.set(targetFormat,pipeline)}return pipeline}static _GetPointVertexSource(){return`
+		${vertexUniformBufferDeclaration}
+
+		struct PointData {
+			data : array<vec4<f32>>
+		};
+		@binding(3) @group(0) var<storage> pointBuffer : PointData;
+
+		struct VertexInput {
+			@builtin(vertex_index) VertexIndex : u32
+		};
+
+		struct VertexOutput {
+			@builtin(position) Position : vec4<f32>,
+			@location(0) fragUV : vec2<f32>,
+			@location(1) pointOpacity : f32
+		};
+
+		@vertex
+		fn main(input : VertexInput) -> VertexOutput {
+
+			var normPos : array<vec2<f32>, 4> = array<vec2<f32>, 4>(
+				vec2<f32>(-0.5, -0.5),
+				vec2<f32>(0.5, -0.5),
+				vec2<f32>(0.5, 0.5),
+				vec2<f32>(-0.5, 0.5));
+			
+			var output : VertexOutput;
+			var p : vec2<f32> = normPos[input.VertexIndex % u32(4)];
+			var pointData : vec4<f32> = pointBuffer.data[input.VertexIndex / u32(4)];
+
+			var size : f32 = pointData.z;
+			output.Position = uniforms.transform * vec4<f32>(p * size + pointData.xy, uniforms.zElevation, 1.0);
+			output.pointOpacity = pointData.w;
+
+			var pointTexMin : vec2<f32> = min(uniforms.pointTexStart, uniforms.pointTexEnd);
+			var pointTexMax : vec2<f32> = max(uniforms.pointTexStart, uniforms.pointTexEnd);
+			var pn : vec2<f32> = p + vec2<f32>(0.5, 0.5);
+			var pointCoord : vec2<f32> = select(vec2<f32>(1.0 - pn.y, pn.x), pn, uniforms.pointTexEnd.x > uniforms.pointTexStart.x);
+
+			output.fragUV = mix(pointTexMin, pointTexMax, pointCoord);
+			return output;
+		}`}static _GetPointFragmentSource(useFragDepth){return`
+		${fragmentUniformBufferDeclaration}
+
+		%%SAMPLERFRONT_BINDING%% var sampler0 : sampler;
+		%%TEXTUREFRONT_BINDING%% var texture0 : texture_2d<f32>;
+
+		struct FragmentInput {
+			@location(0) fragUV : vec2<f32>,
+			@location(1) pointOpacity : f32,
+			@builtin(position) fragPos : vec4<f32>
+		};
+		
+		struct FragmentOutput {
+			@location(0) color : vec4<f32>,
+			${useFragDepth?"@builtin(frag_depth) fragDepth: f32":""} 
+		};
+
+		@fragment
+		fn main(input : FragmentInput) -> FragmentOutput {
+			var output : FragmentOutput;
+			output.color = textureSample(texture0, sampler0, input.fragUV) * uniforms.pointColor * input.pointOpacity;
+			${useFragDepth?"output.fragDepth = select(input.fragPos.z, 1.0, output.color.a == 0.0);":""}
+			return output;
+		}`}static _GetTilemapFragmentShaderSource(useFragDepth){return`
+		${fragmentUniformBufferDeclaration}
+
+		%%SAMPLERFRONT_BINDING%% var sampler0 : sampler;
+		%%TEXTUREFRONT_BINDING%% var texture0 : texture_2d<f32>;
+
+		%%FRAGMENTINPUT_STRUCT%%
+		
+		struct FragmentOutput {
+			@location(0) color : vec4<f32>,
+			${useFragDepth?"@builtin(frag_depth) fragDepth: f32":""} 
+		};
+
+		@fragment
+		fn main(input : FragmentInput) -> FragmentOutput {
+			var output : FragmentOutput;
+			var halfPixelSize : vec2<f32> = vec2<f32>(0.5, 0.5) / vec2<f32>(textureDimensions(texture0));
+
+			var tile : vec2<f32> = floor(input.fragUV);
+			var tex : vec2<f32> = fract(input.fragUV);
+			var tileOrigin : vec2<f32> = uniforms.srcRectStart + tile * (uniforms.tileSize + uniforms.tileSpacing);
+			var lowerBound : vec2<f32> = tileOrigin + halfPixelSize;
+			var upperBound : vec2<f32> = tileOrigin + uniforms.tileSize - halfPixelSize;
+
+			output.color = textureSampleLevel(texture0, sampler0, clamp(tex, lowerBound, upperBound), 0.0) * input.fragColor;
+			${useFragDepth?"output.fragDepth = select(input.fragPos.z, 1.0, output.color.a == 0.0);":""}
+			return output;
+		}`}static GetTileRandomizationFragmentShaderSource(useFragDepth){return`
+${fragmentUniformBufferDeclaration}
+
+%%SAMPLERFRONT_BINDING%% var sampler0 : sampler;
+%%TEXTUREFRONT_BINDING%% var texture0 : texture_2d<f32>;
+
+%%FRAGMENTINPUT_STRUCT%%
+
+struct FragmentOutput {
+	@location(0) color : vec4<f32>,
+	${useFragDepth?"@builtin(frag_depth) fragDepth: f32":""} 
+};
+
+%%C3_UTILITY_FUNCTIONS%%
+
+const PI : f32 = 3.1415926;
+
+fn cospVec4(a : vec4<f32>, b : vec4<f32>, x : f32) -> vec4<f32>
+{
+	return (a + b + (a - b) * cos(x * PI)) / 2.0;
+}
+
+fn randVec3(seed : vec2<f32>) -> vec3<f32>
+{
+	return vec3<f32>(
+		fract(sin(dot(seed.xy, vec2<f32>(12.9898,78.233))) * 43758.5453),
+		fract(sin(dot(seed.yx, vec2<f32>(12.9898,-78.233))) * 43758.5453),
+		fract(sin(dot(seed.xy, vec2<f32>(-12.9898,-78.233))) * 43758.5453));
+}
+
+fn sampleTile(tile : vec2<f32>, uv : vec2<f32>, ddx : vec2<f32>, ddy : vec2<f32>) -> vec4<f32>
+{
+	var posRandom = uniforms.tileSize;
+	var angleRandom = uniforms.outlineThickness;
+	var pixelSize = c3_getPixelSize(texture0);
+	
+	var rand = (randVec3(round(tile)) - 0.5) * 2.0;
+	
+	var angle = angleRandom * rand.z * PI;
+	var sin_a = sin(angle);
+	var cos_a = cos(angle);
+	var aspect = pixelSize.x / pixelSize.y;
+
+	var mid = tile + vec2<f32>(0.5, 0.5);
+	var dp = uv - mid;
+	dp.x /= aspect;
+	var r = vec2<f32>(dp.x * cos_a - dp.y * sin_a,
+					  dp.y * cos_a + dp.x * sin_a);
+	r.x *= aspect;
+
+	var p = mid + r + (posRandom * rand.xy / 2.0);
+	
+	return textureSampleGrad(texture0, sampler0, p, ddx, ddy);
+}
+
+@fragment
+fn main(input : FragmentInput) -> FragmentOutput
+{
+	var output : FragmentOutput;
+	
+	var blendMarginX = uniforms.tileSpacing.x;
+	var blendMarginY = uniforms.tileSpacing.y;
+	
+	var tile = floor(input.fragUV);
+	var tex = fract(input.fragUV);
+	var ddx = dpdx(input.fragUV);
+	var ddy = dpdy(input.fragUV);
+	
+	var curTile = sampleTile(tile, input.fragUV, ddx, ddy);
+	
+	var inLeftMargin = (tex.x < blendMarginX);
+	var inRightMargin = (tex.x > 1.0 - blendMarginX);
+	var inTopMargin = (tex.y < blendMarginY);
+	var inBottomMargin = (tex.y > 1.0 - blendMarginY);
+	
+	if (inLeftMargin)
+	{
+		var leftTile = sampleTile(tile + vec2<f32>(-1.0, 0.0), input.fragUV, ddx, ddy);
+		var leftMix = (tex.x / (blendMarginX * 2.0)) + 0.5;
+		var leftMixedTile = cospVec4(leftTile, curTile, leftMix);
+		
+		if (inTopMargin)
+		{
+			var topTile =     sampleTile(tile + vec2<f32>(0.0,  -1.0), input.fragUV, ddx, ddy);
+			var topLeftTile = sampleTile(tile + vec2<f32>(-1.0, -1.0), input.fragUV, ddx, ddy);
+			var topLeftMixedTile = cospVec4(topLeftTile, topTile, leftMix);
+			
+			output.color = cospVec4(topLeftMixedTile, leftMixedTile, (tex.y / (blendMarginY * 2.0)) + 0.5);
+		}
+		else if (inBottomMargin)
+		{
+			var bottomTile =     sampleTile(tile + vec2<f32>(0.0,  1.0), input.fragUV, ddx, ddy);
+			var bottomLeftTile = sampleTile(tile + vec2<f32>(-1.0, 1.0), input.fragUV, ddx, ddy);
+			var bottomLeftMixedTile = cospVec4(bottomLeftTile, bottomTile, leftMix);
+			
+			output.color = cospVec4(leftMixedTile, bottomLeftMixedTile, (tex.y - (1.0 - blendMarginY)) / (blendMarginY * 2.0));
+		}
+		else
+		{
+			output.color = leftMixedTile;
+		}
+	}
+	else if (inRightMargin)
+	{
+		var rightTile = sampleTile(tile + vec2(1.0, 0.0), input.fragUV, ddx, ddy);
+		var rightMix = (tex.x - (1.0 - blendMarginX)) / (blendMarginX * 2.0);
+		var rightMixedTile = cospVec4(curTile, rightTile, rightMix);
+		
+		if (inTopMargin)
+		{
+			var topTile =      sampleTile(tile + vec2<f32>(0.0, -1.0), input.fragUV, ddx, ddy);
+			var topRightTile = sampleTile(tile + vec2<f32>(1.0, -1.0), input.fragUV, ddx, ddy);
+			var topRightMixedTile = cospVec4(topTile, topRightTile, rightMix);
+			
+			output.color = cospVec4(topRightMixedTile, rightMixedTile, (tex.y / (blendMarginY * 2.0)) + 0.5);
+		}
+		else if (inBottomMargin)
+		{
+			var bottomTile =      sampleTile(tile + vec2<f32>(0.0, 1.0), input.fragUV, ddx, ddy);
+			var bottomRightTile = sampleTile(tile + vec2<f32>(1.0, 1.0), input.fragUV, ddx, ddy);
+			var bottomRightMixedTile = cospVec4(bottomTile, bottomRightTile, rightMix);
+			
+			output.color = cospVec4(rightMixedTile, bottomRightMixedTile, (tex.y - (1.0 - blendMarginY)) / (blendMarginY * 2.0));
+		}
+		else
+		{
+			output.color = rightMixedTile;
+		}
+	}
+	else if (inTopMargin)
+	{
+		var topTile = sampleTile(tile + vec2<f32>(0.0, -1.0), input.fragUV, ddx, ddy);
+		output.color = cospVec4(topTile, curTile, (tex.y / (blendMarginY * 2.0)) + 0.5);
+	}
+	else if (inBottomMargin)
+	{
+		var bottomTile = sampleTile(tile + vec2<f32>(0.0, 1.0), input.fragUV, ddx, ddy);
+		output.color = cospVec4(curTile, bottomTile, (tex.y - (1.0 - blendMarginY)) / (blendMarginY * 2.0));
+	}
+	else
+	{
+		output.color = curTile;
+	}
+	
+	output.color *= input.fragColor;
+	${useFragDepth?"output.fragDepth = select(input.fragPos.z, 1.0, output.color.a == 0.0);":""}
+	return output;
+}
+`}static _GetColorFillFragmentShaderSource(){return`
+		%%FRAGMENTINPUT_STRUCT%%
+		%%FRAGMENTOUTPUT_STRUCT%%
+
+		@fragment
+		fn main(input : FragmentInput) -> FragmentOutput {
+			var output : FragmentOutput;
+			output.color = input.fragColor;
+			return output;
+		}`}static _GetLinearGradientFillFragmentShaderSource(){return`
+		${fragmentUniformBufferDeclaration}
+
+		%%FRAGMENTINPUT_STRUCT%%
+		%%FRAGMENTOUTPUT_STRUCT%%
+
+		fn fromLinear(linearRGB : vec3<f32>) -> vec3<f32>
+		{
+			var cutoff : vec3<bool> = (linearRGB < vec3<f32>(0.0031308));
+			var higher : vec3<f32> = vec3<f32>(1.055) * pow(abs(linearRGB), vec3<f32>(1.0/2.4)) - 0.055;
+			var lower : vec3<f32> = linearRGB * 12.92;
+			return select(higher, lower, cutoff);
+		}
+
+		fn toLinear(sRGB : vec3<f32>) -> vec3<f32>
+		{
+			var cutoff : vec3<bool> = (sRGB < vec3<f32>(0.04045));
+			var higher : vec3<f32> = pow(abs((sRGB + 0.055) / 1.055), vec3<f32>(2.4));
+			var lower : vec3<f32> = sRGB / 12.92;
+			return select(higher, lower, cutoff);
+		}
+
+		@fragment
+		fn main(input : FragmentInput) -> FragmentOutput {
+			var output : FragmentOutput;
+			var linearGrad : vec3<f32> = mix(toLinear(input.fragColor.rgb), toLinear(uniforms.color2.rgb), vec3<f32>(input.fragUV.x));
+
+			var a : f32 = mix(input.fragColor.a, uniforms.color2.a, input.fragUV.x);
+			output.color = vec4<f32>(fromLinear(linearGrad) * a, a);
+			return output;
+		}
+		`}static _GetPenumbraFillFragmentShaderSource(){return`
+		${fragmentUniformBufferDeclaration}
+
+		%%FRAGMENTINPUT_STRUCT%%
+		%%FRAGMENTOUTPUT_STRUCT%%
+
+		@fragment
+		fn main(input : FragmentInput) -> FragmentOutput {
+			var output : FragmentOutput;
+			var grad : f32 = input.fragUV.x / (1.0 - input.fragUV.y);
+			output.color = input.fragColor * (1.0 - (cos(grad * 3.141592653589793) + 1.0) / 2.0);
+			return output;
+		}
+		`}static _GetHardEllipseFillFragmentShaderSource(){return`
+		%%FRAGMENTINPUT_STRUCT%%
+		%%FRAGMENTOUTPUT_STRUCT%%
+
+		@fragment
+		fn main(input : FragmentInput) -> FragmentOutput {
+			var output : FragmentOutput;
+			var diff : vec2<f32> = input.fragUV - 0.5;
+			var diffSq : vec2<f32> = diff * diff;
+
+			var f : f32 = step(diffSq.x + diffSq.y, 0.25);
+
+			output.color = input.fragColor * f;
+			return output;
+		}`}static _GetHardEllipseOutlineFragmentShaderSource(){return`
+		${fragmentUniformBufferDeclaration}
+
+		%%FRAGMENTINPUT_STRUCT%%
+		%%FRAGMENTOUTPUT_STRUCT%%
+
+		@fragment
+		fn main(input : FragmentInput) -> FragmentOutput {
+			var output : FragmentOutput;
+			var diff : vec2<f32> = input.fragUV - 0.5;
+			var diffSq : vec2<f32> = diff * diff;
+			var distSq : f32 = diffSq.x + diffSq.y;
+			var norm : vec2<f32> = normalize(diff);
+			var halfNorm : vec2<f32> = norm * 0.5;
+
+			var innerF : f32 = step(distSq, 0.25);
+
+			var innerEdge : vec2<f32> = halfNorm - uniforms.pixelSize * norm * uniforms.outlineThickness;
+			var innerEdgeSq : vec2<f32> = innerEdge * innerEdge;
+			var outerF : f32 = step(innerEdgeSq.x + innerEdgeSq.y, distSq);
+			
+			output.color = input.fragColor * innerF * outerF;
+			return output;
+		}`}static _GetSmoothEllipseFillFragmentShaderSource(){return`
+		${fragmentUniformBufferDeclaration}
+
+		%%FRAGMENTINPUT_STRUCT%%
+		%%FRAGMENTOUTPUT_STRUCT%%
+
+		@fragment
+		fn main(input : FragmentInput) -> FragmentOutput {
+			var output : FragmentOutput;
+			var diff : vec2<f32> = input.fragUV - 0.5;
+			var diffSq : vec2<f32> = diff * diff;
+			var norm : vec2<f32> = normalize(diff);
+			var halfNorm : vec2<f32> = norm * 0.5;
+			var halfNormSq : vec2<f32> = halfNorm * halfNorm;
+
+			var innerEdge : vec2<f32> = halfNorm - uniforms.pixelSize * norm;
+			var innerEdgeSq : vec2<f32> = innerEdge * innerEdge;
+
+			var f : f32 = smoothstep(halfNormSq.x + halfNormSq.y, innerEdgeSq.x + innerEdgeSq.y, diffSq.x + diffSq.y);
+
+			output.color = input.fragColor * f;
+			return output;
+		}`}static _GetSmoothEllipseOutlineFragmentShaderSource(){return`
+		${fragmentUniformBufferDeclaration}
+
+		%%FRAGMENTINPUT_STRUCT%%
+		%%FRAGMENTOUTPUT_STRUCT%%
+
+		@fragment
+		fn main(input : FragmentInput) -> FragmentOutput {
+			var output : FragmentOutput;
+			var diff : vec2<f32> = input.fragUV - 0.5;
+			var diffSq : vec2<f32> = diff * diff;
+			var distSq : f32 = diffSq.x + diffSq.y;
+			var norm : vec2<f32> = normalize(diff);
+			var halfNorm : vec2<f32> = norm * 0.5;
+			var halfNormSq : vec2<f32> = halfNorm * halfNorm;
+
+			var pxNorm : vec2<f32> = uniforms.pixelSize * norm;
+			var innerEdge1 : vec2<f32> = halfNorm - pxNorm;
+			var innerEdge1Sq : vec2<f32> = innerEdge1 * innerEdge1;
+
+			var innerF : f32 = smoothstep(halfNormSq.x + halfNormSq.y, innerEdge1Sq.x + innerEdge1Sq.y, distSq);
+
+			var innerEdge2 : vec2<f32> = halfNorm - pxNorm * uniforms.outlineThickness;
+			var innerEdge2Sq : vec2<f32> = innerEdge2 * innerEdge2;
+			var innerEdge3 : vec2<f32> = halfNorm - pxNorm * (uniforms.outlineThickness + 1.0);
+			var innerEdge3Sq : vec2<f32> = innerEdge3 * innerEdge3;
+
+			var outerF : f32 = smoothstep(innerEdge3Sq.x + innerEdge3Sq.y, innerEdge2Sq.x + innerEdge2Sq.y, distSq);
+			
+			output.color = input.fragColor * innerF * outerF;
+			return output;
+		}`}static _GetSmoothLineFillFragmentShaderSource(){return`
+		%%FRAGMENTINPUT_STRUCT%%
+		%%FRAGMENTOUTPUT_STRUCT%%
+
+		@fragment
+		fn main(input : FragmentInput) -> FragmentOutput {
+			var output : FragmentOutput;
+			var f : f32 = 1.0 - abs(input.fragUV.y - 0.5) * 2.0;
+			output.color = input.fragColor * f;
+			return output;
+		}`}};
+
+}
+
+// ../lib/gfx/webgpu/texture.js
+{
+'use strict';const C3=self.C3;const VALID_SAMPLINGS=new Set(["nearest","bilinear","trilinear"]);const VALID_WRAP_MODES=new Set(["clamp-to-edge","repeat","mirror-repeat"]);const GPUTextureUsage=self["GPUTextureUsage"];const DEFAULT_CREATE_OPTIONS={wrapX:"clamp-to-edge",wrapY:"clamp-to-edge",sampling:"trilinear",anisotropy:0,mipMap:true,isRenderTarget:false,isSampled:false,canReadPixels:false,canUpdate:false,multisampling:0,width:-1,height:-1};const UPDATE_DEFAULT_OPTIONS={premultiplyAlpha:true};
+C3.Gfx.WebGPURendererTexture=class WebGPURendererTexture{constructor(renderer,isForBackbuffer){this._renderer=renderer;this._texture=null;this._format="";this._textureView=null;this._sampler=null;this._ownTextureBindGroup=null;this._backTextureBindGroup=null;this._width=0;this._height=0;this._isStatic=true;this._wrapX="clamp-to-edge";this._wrapY="clamp-to-edge";this._sampling="trilinear";this._anisotropy=0;this._isMipMapped=false;this._refCount=0;this._isRenderTarget=false;this._isSampled=false;this._canReadPixels=
+false;this._canUpdate=false;this._multisampling=0;this._usage=0;this._multiTextureEnabled=true;this._multiTextureGroup=null;this._multiTextureIndex=0;this._isForBackbuffer=!!isForBackbuffer;if(this._isForBackbuffer){this._format=this._renderer.GetSwapChainFormat();this._isRenderTarget=true;this._isSampled=true;this._sampler=this._renderer._GetSampler({sampling:"nearest"})}}_InitFromOpts(opts){this._wrapX=opts.wrapX;this._wrapY=opts.wrapY;this._sampling=opts.sampling;this._anisotropy=opts.anisotropy;
+this._isMipMapped=!!opts.mipMap&&this._renderer.AreMipmapsEnabled()&&opts.sampling!=="nearest";this._isRenderTarget=!!opts.isRenderTarget;this._isSampled=!!opts.isSampled;this._canReadPixels=!!opts.canReadPixels;this._canUpdate=!!opts.canUpdate;this._multisampling=this._renderer._ClampToSupportedMultisampleValues(opts.multisampling);if(!VALID_SAMPLINGS.has(this._sampling))throw new Error("invalid sampling");if(!VALID_WRAP_MODES.has(this._wrapX)||!VALID_WRAP_MODES.has(this._wrapY))throw new Error("invalid wrap mode");
+if(this._multisampling>=2&&this._isSampled)throw new Error("invalid use of multisampling");if(this._sampling==="nearest")this._anisotropy=0;this._sampler=this._renderer._GetSampler({wrapX:this._wrapX,wrapY:this._wrapY,sampling:this._sampling,anisotropy:this._anisotropy});this._CreateGPUResources();this._refCount=1}_CreateGPUResources(){const renderer=this._renderer;const device=renderer._GetDevice();this._usage=0;if(this._isRenderTarget){this._usage=GPUTextureUsage["RENDER_ATTACHMENT"];if(this._isSampled)this._usage|=
+GPUTextureUsage["TEXTURE_BINDING"];if(this._canUpdate)this._usage|=GPUTextureUsage["COPY_DST"];this._format=this._renderer.GetSwapChainFormat()}else{this._usage=GPUTextureUsage["COPY_DST"]|GPUTextureUsage["TEXTURE_BINDING"];this._format=this._renderer.GetTextureFormat()}if(this._canReadPixels)this._usage|=GPUTextureUsage["COPY_SRC"];this._texture=device["createTexture"]({"size":[this._width,this._height,1],"mipLevelCount":this._GetMipLevelCount(),"format":this._format,"usage":this._usage,"sampleCount":this._multisampling>=
+2?this._multisampling:1});this._textureView=this._texture["createView"]();const texBindGroupEntries=[];const multiTexLimit=C3.Gfx.WebGPUMultiTextureGroup.GetMultiTextureLimit();for(let i=0;i<multiTexLimit;++i)texBindGroupEntries.push({"binding":i*2,"resource":this._sampler},{"binding":i*2+1,"resource":this._textureView});if(!this._isRenderTarget||this._isSampled){this._ownTextureBindGroup=device["createBindGroup"]({"layout":renderer._GetTextureBindGroupLayout(),"entries":texBindGroupEntries});this._backTextureBindGroup=
+device["createBindGroup"]({"layout":renderer._GetBackTextureBindGroupLayout(),"entries":[{"binding":0,"resource":this._renderer._GetSampler({sampling:"nearest"})},{"binding":1,"resource":this._textureView}]})}if(this._CanMultiTexture())this._SetMultiTextureAvailable(true)}_DeleteGPUResources(){if(this._multiTextureGroup)this._multiTextureGroup.Release();this._SetMultiTextureAvailable(false);this._texture["destroy"]();this._texture=null;this._textureView=null;this._ownTextureBindGroup=null;this._backTextureBindGroup=
+null}static IsGPUImageCopyExternalImageSource(data){return data instanceof ImageBitmap||typeof HTMLVideoElement!=="undefined"&&data instanceof HTMLVideoElement||typeof HTMLCanvasElement!=="undefined"&&data instanceof HTMLCanvasElement||typeof OffscreenCanvas!=="undefined"&&data instanceof OffscreenCanvas}static IsCreateImageBitmapDataSource(data){return typeof HTMLImageElement!=="undefined"&&data instanceof HTMLImageElement||data instanceof ImageData}_GetDataSize(data){return[data.width||data.videoWidth,
+data.height||data.videoHeight]}_Create(data,opts){if(data&&!C3.Gfx.WebGPURendererTexture.IsGPUImageCopyExternalImageSource(data))throw new TypeError("invalid texture source");opts=Object.assign({},DEFAULT_CREATE_OPTIONS,opts);if(this._texture)throw new Error("already created texture");this._isStatic=true;if(data){const [dataWidth,dataHeight]=this._GetDataSize(data);this._width=dataWidth;this._height=dataHeight}else{this._width=opts.width;this._height=opts.height;if(this._width<=0||this._height<=0)throw new Error("invalid texture size");
+}this._InitFromOpts(opts);if(this._isRenderTarget||this._isSampled)throw new Error("static texture cannot be render target");if(data)this._UploadImage(data)}_UploadImage(data){if(this._isMipMapped)this._GenerateMipmaps(data,this._GetMipLevelCount());else{const device=this._renderer._GetDevice();const commandEncoder=device["createCommandEncoder"]();const stagingTexture=device["createTexture"]({"size":[this._width,this._height,1],"mipLevelCount":1,"format":this._format,"usage":GPUTextureUsage["COPY_SRC"]|
+GPUTextureUsage["COPY_DST"]|GPUTextureUsage["RENDER_ATTACHMENT"]});this._CopyImageToMipLevel(stagingTexture,data,0);commandEncoder["copyTextureToTexture"]({"texture":stagingTexture,"mipLevel":0},{"texture":this._texture,"mipLevel":0},[this._width,this._height,1]);device["queue"]["submit"]([commandEncoder["finish"]()]);stagingTexture["destroy"]()}}_CopyImageToMipLevel(texture,data,mipLevel){const [dataWidth,dataHeight]=this._GetDataSize(data);this._renderer._GetDevice()["queue"]["copyExternalImageToTexture"]({"source":data},
+{"texture":texture,"mipLevel":mipLevel,"premultipliedAlpha":true},[dataWidth,dataHeight,1])}_GetMipLevelCount(){if(this._isMipMapped)return Math.floor(Math.log2(Math.max(this._width,this._height))+1);else return 1}_GenerateMipmaps(data,mipLevelCount){const device=this._renderer._GetDevice();const stagingTexture=device["createTexture"]({"size":[this._width,this._height,1],"mipLevelCount":this._GetMipLevelCount(),"format":this._format,"usage":GPUTextureUsage["COPY_DST"]|GPUTextureUsage["COPY_SRC"]|
+GPUTextureUsage["TEXTURE_BINDING"]|GPUTextureUsage["RENDER_ATTACHMENT"]});const mipmapPipeline=this._renderer._GetMipmapGeneratorPipeline();const mipmapBindGroupLayout=mipmapPipeline["getBindGroupLayout"](0);const mipmapSampler=this._renderer._GetSampler({sampling:"bilinear"});const commandEncoder=device["createCommandEncoder"]();this._CopyImageToMipLevel(stagingTexture,data,0);commandEncoder["copyTextureToTexture"]({"texture":stagingTexture,"mipLevel":0},{"texture":this._texture,"mipLevel":0},[this._width,
+this._height,1]);const stagingTextureViews=[];for(let i=0;i<mipLevelCount;++i)stagingTextureViews.push(stagingTexture["createView"]({"baseMipLevel":i,"mipLevelCount":1}));let mipWidthf=this._width;let mipHeightf=this._height;for(let i=1;i<mipLevelCount;++i){mipWidthf/=2;mipHeightf/=2;const mipWidth=Math.max(Math.floor(mipWidthf),1);const mipHeight=Math.max(Math.floor(mipHeightf),1);const passEncoder=commandEncoder["beginRenderPass"]({"colorAttachments":[{"view":stagingTextureViews[i],"loadOp":"clear",
+"clearValue":[0,0,0,0],"storeOp":"store"}]});const bindGroup=device["createBindGroup"]({"layout":mipmapBindGroupLayout,"entries":[{"binding":0,"resource":mipmapSampler},{"binding":1,"resource":stagingTextureViews[i-1]}]});passEncoder["setPipeline"](mipmapPipeline);passEncoder["setBindGroup"](0,bindGroup);passEncoder["draw"](4);passEncoder["end"]();commandEncoder["copyTextureToTexture"]({"texture":stagingTexture,"mipLevel":i},{"texture":this._texture,"mipLevel":i},[mipWidth,mipHeight,1])}device["queue"]["submit"]([commandEncoder["finish"]()]);
+stagingTexture["destroy"]()}_CreateDynamic(width,height,opts){opts=Object.assign({},DEFAULT_CREATE_OPTIONS,opts);if(this._texture)throw new Error("already created texture");this._isStatic=false;this._width=width;this._height=height;this._InitFromOpts(opts)}async _Update(data,opts){if(!C3.Gfx.WebGPURendererTexture.IsGPUImageCopyExternalImageSource(data)&&!C3.Gfx.WebGPURendererTexture.IsCreateImageBitmapDataSource(data))throw new Error("invalid texture source");if(!this._texture||this._refCount<=0)throw new Error("texture not created");
+if(this._isStatic)throw new Error("cannot update static texture");opts=Object.assign({},UPDATE_DEFAULT_OPTIONS,opts);if(C3.Gfx.WebGPURendererTexture.IsCreateImageBitmapDataSource(data)){data=await createImageBitmap(data,{"premultiplyAlpha":opts.premultiplyAlpha?"premultiply":"none"});if(!this._texture)return}this._renderer.EndBatch();const [dataWidth,dataHeight]=this._GetDataSize(data);if(this._width!==dataWidth||this._height!==dataHeight){this._DeleteGPUResources();this._width=dataWidth;this._height=
+dataHeight;this._CreateGPUResources();this._renderer._OnTextureBindGroupChanged(this)}this._UploadImage(data)}_Delete(){if(this._refCount>0)throw new Error("texture still has references");if(!this._texture)throw new Error("already deleted texture");this._DeleteGPUResources()}_DisableMultiTexture(){this._multiTextureEnabled=false;this._SetMultiTextureAvailable(false)}_CanMultiTexture(){return this._isStatic&&this._multiTextureEnabled&&!this._isRenderTarget}_SetMultiTextureAvailable(available){this._renderer._SetMultiTextureAvailable(this,
+available)}_SetMultiTextureGroup(mtg,index){if(this._multiTextureGroup)throw new Error("already in a group");this._multiTextureGroup=mtg;this._multiTextureIndex=index;this._SetMultiTextureAvailable(false)}_ClearMultiTextureGroup(){this._multiTextureGroup=null;this._multiTextureIndex=0;if(this._CanMultiTexture())this._SetMultiTextureAvailable(true)}_GetOwnTextureBindGroup(){return this._ownTextureBindGroup}_GetBackTextureBindGroup(){return this._backTextureBindGroup}_GetMultiTextureBindGroup(){if(this._multiTextureGroup!==
+null)return this._multiTextureGroup._GetBindGroup();else if(this._CanMultiTexture()){this._renderer._TryCreateMultiTextureGroup(this);return this._multiTextureGroup!==null?this._multiTextureGroup._GetBindGroup():this._ownTextureBindGroup}else return this._ownTextureBindGroup}_GetMultiTextureIndex(){return this._multiTextureIndex}GetWidth(){return this._width}GetHeight(){return this._height}GetRenderer(){return this._renderer}_GetTexture(){return this._texture}_GetTextureView(){return this._textureView}_GetFormat(){return this._format}_GetSampler(){return this._sampler}GetSampling(){return this._sampling}IsLinearSampling(){return this._sampling!==
+"nearest"}IsRenderTarget(){return this._isRenderTarget}IsSampled(){return this._isSampled}CanReadPixels(){return this._canReadPixels}AddReference(){this._refCount++}SubtractReference(){if(this._refCount<=0)throw new Error("no more references");this._refCount--}GetReferenceCount(){return this._refCount}_GetUsage(){return this._usage}_BackbufferTextureSetProperties(usage,format){this._usage=usage;this._format=format}_BackbufferTextureStartFrame(){const renderer=this._renderer;const device=renderer._GetDevice();
+this._texture=renderer._GetSwapChainTexture();this._textureView=renderer._GetSwapChainTexView();if(renderer._CanSampleBackbuffer())this._backTextureBindGroup=device["createBindGroup"]({"layout":renderer._GetBackTextureBindGroupLayout(),"entries":[{"binding":0,"resource":this._sampler},{"binding":1,"resource":this._textureView}]})}_BackbufferTextureEndFrame(){this._texture=null;this._textureView=null;this._backTextureBindGroup=null}static OnContextLost(){}};
+
+}
+
+// ../lib/gfx/webgpu/multiTextureGroup.js
+{
+'use strict';const C3=self.C3;
+C3.Gfx.WebGPUMultiTextureGroup=class WebGPUMultiTextureGroup{constructor(renderer,textures){if(textures.length<2)throw new Error("invalid multi-texture group");this._renderer=renderer;this._textures=textures;this._multiTextureBindGroup=null;for(let i=0,len=textures.length;i<len;++i)textures[i]._SetMultiTextureGroup(this,i);if(textures.length<C3.Gfx.WebGPUMultiTextureGroup.GetMultiTextureLimit())this._renderer._SetMultiTextureGroupNonFull(this,true);this._CreateBindGroup()}Release(){this._renderer._SetMultiTextureGroupNonFull(this,false);
+for(const tex of this._textures)tex._ClearMultiTextureGroup();this._DeleteBindGroup();C3.clearArray(this._textures);this._renderer=null}_CreateBindGroup(){this._DeleteBindGroup();const device=this._renderer._GetDevice();const multiTexBindGroupEntries=[];const multiTexLimit=C3.Gfx.WebGPUMultiTextureGroup.GetMultiTextureLimit();for(let i=0;i<multiTexLimit;++i){const tex=this._textures[Math.min(i,this._textures.length-1)];multiTexBindGroupEntries.push({"binding":i*2,"resource":tex._GetSampler()},{"binding":i*
+2+1,"resource":tex._GetTextureView()})}this._multiTextureBindGroup=device["createBindGroup"]({"layout":this._renderer._GetTextureBindGroupLayout(),"entries":multiTexBindGroupEntries})}_DeleteBindGroup(){if(this._multiTextureBindGroup!==null)this._renderer._OnMultiTextureBindGroupReleased(this._multiTextureBindGroup);this._multiTextureBindGroup=null}_GetBindGroup(){return this._multiTextureBindGroup}static GetMultiTextureLimit(){return 14}};
+
+}
+
+// ../lib/gfx/webgpu/renderTarget.js
+{
+'use strict';const C3=self.C3;const glMatrix=self.glMatrix;const vec3=glMatrix.vec3;const mat4=glMatrix.mat4;const DEFAULT_RENDERTARGET_OPTIONS={sampling:"trilinear",alpha:true,depth:false,isSampled:true,canReadPixels:false,canUpdate:false,isDefaultSize:true,multisampling:0};
+C3.Gfx.WebGPURenderTarget=class WebGPURenderTarget{constructor(renderer,isBackBuffer){this._renderer=renderer;this._isBackBuffer=!!isBackBuffer;this._depth=isBackBuffer?renderer.UsesDepthBuffer():false;this._rendererTexture=null;this._isDefaultSize=true;this._multisampling=0;this._isAwaitingClear=false;this._clearColor=C3.New(C3.Color);this._projectionMatrix=mat4.create();this._lastFov=0;this._lastNearZ=0;this._lastFarZ=0;if(this._isBackBuffer)this._rendererTexture=C3.New(C3.Gfx.WebGPURendererTexture,
+renderer,true)}_Create(width,height,opts){opts=Object.assign({},DEFAULT_RENDERTARGET_OPTIONS,opts);if(this._rendererTexture)throw new Error("already created render target");this._depth=!!opts.depth;this._isDefaultSize=!!opts.isDefaultSize;this._multisampling=this._renderer._ClampToSupportedMultisampleValues(opts.multisampling);if(this._multisampling>=2&&opts.isSampled)throw new Error("invalid use of multisampling");this._rendererTexture=this._renderer.CreateDynamicTexture(width,height,{sampling:opts.sampling,
+mipMap:false,isRenderTarget:true,isSampled:opts.isSampled,canReadPixels:opts.canReadPixels,canUpdate:opts.canUpdate,multisampling:this._multisampling});this._CalculateProjection()}_Delete(){this._rendererTexture._DeleteGPUResources();this._rendererTexture=null;this._renderer=null}_Resize(width,height){if(width===this.GetWidth()&&height===this.GetHeight())return;const sampling=this._rendererTexture.GetSampling();const isSampled=this._rendererTexture.IsSampled();const canReadPixels=this._rendererTexture.CanReadPixels();
+this._rendererTexture._DeleteGPUResources();this._rendererTexture=null;this._rendererTexture=this._renderer.CreateDynamicTexture(width,height,{sampling,mipMap:false,isRenderTarget:true,isSampled,canReadPixels});this._CalculateProjection()}_GetTextureView(){if(this._isBackBuffer)return this._renderer._GetSwapChainTexView();else return this._rendererTexture._GetTextureView()}_CalculateProjection(){this._renderer.CalculatePerspectiveMatrix(this._projectionMatrix,this.GetWidth()/this.GetHeight());this._lastFov=
+this._renderer.GetFovY();this._lastNearZ=this._renderer.GetNearZ();this._lastFarZ=this._renderer.GetFarZ()}IsDefaultSize(){return this._isDefaultSize}IsBackBuffer(){return this._isBackBuffer}HasDepthBuffer(){return this._depth}GetWidth(){if(this._isBackBuffer)return this._renderer.GetWidth();else return this._rendererTexture.GetWidth()}GetHeight(){if(this._isBackBuffer)return this._renderer.GetHeight();else return this._rendererTexture.GetHeight()}GetTexture(){if(this._rendererTexture)return this._rendererTexture;
+else throw new Error("no texture");}GetRenderer(){return this._renderer}GetMultisampling(){return this._multisampling}GetProjectionMatrix(){if(this._renderer.GetFovY()!==this._lastFov||this._renderer.GetNearZ()!==this._lastNearZ||this._renderer.GetFarZ()!==this._lastFarZ)this._CalculateProjection();return this._projectionMatrix}IsLinearSampling(){return this._rendererTexture.IsLinearSampling()}IsSampled(){return this._rendererTexture.IsSampled()}CanReadPixels(){return this._rendererTexture.CanReadPixels()}IsCompatibleWithOptions(opts){opts=
+Object.assign({},DEFAULT_RENDERTARGET_OPTIONS,opts);if(opts.sampling!=="nearest"!==this.IsLinearSampling())return false;if(!!opts.isSampled!==this.IsSampled())return false;if(!!opts.canReadPixels!==this.CanReadPixels())return false;if(!!opts.depth!==this.HasDepthBuffer())return false;if(typeof opts.width==="number"||typeof opts.height==="number")return!this.IsDefaultSize()&&this.GetWidth()===opts.width&&this.GetHeight()===opts.height;else return this.IsDefaultSize()}_SetIsAwaitingClear(x){this._isAwaitingClear=
+!!x}_IsAwaitingClear(){return this._isAwaitingClear}_GetClearColor(){return this._clearColor}static OnContextLost(){}};
+
+}
+
+// ../lib/gfx/webgpu/timeQuerySet.js
+{
+'use strict';const C3=self.C3;
+C3.Gfx.WebGPUTimeQuerySet=class WebGPUTimeQuerySet{constructor(renderer,queryCount){this._renderer=renderer;this._frameNumber=this._renderer.GetFrameNumber();this._queryCount=queryCount;const device=this._renderer._GetDevice();this._querySet=device["createQuerySet"]({"count":this._queryCount,"type":"timestamp"});const GPUBufferUsage=self["GPUBufferUsage"];this._resolveBuffer=device["createBuffer"]({"size":this._GetBufferSize(),"usage":GPUBufferUsage["QUERY_RESOLVE"]|GPUBufferUsage["COPY_SRC"]});this._readbackBuffer=
+device["createBuffer"]({"size":this._GetBufferSize(),"usage":GPUBufferUsage["COPY_DST"]|GPUBufferUsage["MAP_READ"]});this._result=null}_GetBufferSize(){return this._queryCount*8}_GetQuerySet(){return this._querySet}Resolve(encoder){encoder["resolveQuerySet"](this._querySet,0,this._queryCount,this._resolveBuffer,0);encoder["copyBufferToBuffer"](this._resolveBuffer,0,this._readbackBuffer,0,this._GetBufferSize())}async ReadResult(){const bufferSize=this._GetBufferSize();await this._readbackBuffer["mapAsync"](self["GPUMapMode"]["READ"],
+0,bufferSize);const arrayBuffer=this._readbackBuffer["getMappedRange"](0,bufferSize);this._result=new BigUint64Array(arrayBuffer.slice(0));this._readbackBuffer["destroy"]();this._readbackBuffer=null;this._resolveBuffer["destroy"]();this._resolveBuffer=null;this._querySet["destroy"]();this._querySet=null}HasResult(){return this._result!==null}GetResult(){if(!this._result)throw new Error("not yet got result");return this._result}GetFrameNumber(){return this._frameNumber}};
+
+}
+
 // ../lib/gfx/effectCompositor/effectChainManager.js
 {
 'use strict';const C3=self.C3;const DEFAULT_CTOR_OPTS={getDrawSize:null,getRenderTarget:null,releaseRenderTarget:null,getTime:null,redraw:null};
@@ -3593,8 +4754,8 @@ this._gpuTimeStartFrame=this._gpuTimeEndFrame;this._gpuTimeEndFrame=0}_AddWebGPU
 resolve});return this._snapshotPromise}_MaybeTakeSnapshot(){if(!this._snapshotFormat)return;let canvas=this._canvas;const snapArea=this._snapshotArea;const x=C3.clamp(Math.floor(snapArea.getLeft()),0,canvas.width);const y=C3.clamp(Math.floor(snapArea.getTop()),0,canvas.height);let w=snapArea.width();if(w===0)w=canvas.width-x;else w=C3.clamp(Math.floor(w),0,canvas.width-x);let h=snapArea.height();if(h===0)h=canvas.height-y;else h=C3.clamp(Math.floor(h),0,canvas.height-y);if((x!==0||y!==0||w!==canvas.width||
 h!==canvas.height)&&(w>0&&h>0)){canvas=C3.CreateCanvas(w,h);const ctx=canvas.getContext("2d");ctx.drawImage(this._canvas,x,y,w,h,0,0,w,h)}C3.CanvasToBlob(canvas,this._snapshotFormat,this._snapshotQuality).then(blob=>{if(this._snapshotUrl)URL.revokeObjectURL(this._snapshotUrl);this._snapshotUrl=URL.createObjectURL(blob);this._snapshotPromise=null;this._snapshotResolve(this._snapshotUrl)});this._snapshotFormat="";this._snapshotQuality=1}GetCanvasSnapshotUrl(){return this._snapshotUrl}SetIsPastingToDrawingCanvas(p){if(p)this._isPastingToDrawingCanvas++;
 else this._isPastingToDrawingCanvas--}IsPastingToDrawingCanvas(){return this._isPastingToDrawingCanvas>0}InitLoadingScreen(loaderStyle){const renderer=this.GetRenderer();if(loaderStyle===2){this._percentText=C3.New(C3.Gfx.RendererText,this.GetRenderer());this._percentText.SetFontName("Arial");this._percentText.SetFontSize(16);this._percentText.SetHorizontalAlignment("center");this._percentText.SetVerticalAlignment("center");this._percentText.SetSize(PERCENTTEXT_WIDTH,PERCENTTEXT_HEIGHT)}else if(loaderStyle===
-0){const loadingLogoAsset=this._runtime.GetLoadingLogoAsset();if(loadingLogoAsset)loadingLogoAsset.LoadStaticTexture(renderer).catch(err=>console.warn(`[C3 runtime] Failed to create texture for loading logo: `,err))}else if(loaderStyle===4){this._LoadSvgSplashImage("data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0idXRmLTgiPz4NCjwhLS0gR2VuZXJhdG9yOiBBZG9iZSBJbGx1c3RyYXRvciAxNi4wLjAsIFNWRyBFeHBvcnQgUGx1Zy1JbiAuIFNWRyBWZXJzaW9uOiA2LjAwIEJ1aWxkIDApICAtLT4NCjwhRE9DVFlQRSBzdmcgUFVCTElDICItLy9XM0MvL0RURCBTVkcgMS4xLy9FTiIgImh0dHA6Ly93d3cudzMub3JnL0dyYXBoaWNzL1NWRy8xLjEvRFREL3N2ZzExLmR0ZCI+DQo8c3ZnIHZlcnNpb249IjEuMSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB4bWxuczp4bGluaz0iaHR0cDovL3d3dy53My5vcmcvMTk5OS94bGluayIgeD0iMHB4IiB5PSIwcHgiDQoJIHdpZHRoPSIxNzAwLjc5MDA0cHgiIGhlaWdodD0iMTcwMC43OTAwNHB4IiB2aWV3Qm94PSIyODcgMzE3IDExMjUgMTEyNSINCgkgZW5hYmxlLWJhY2tncm91bmQ9Im5ldyAwIDAgMTcwMC43OTAwNCAxNzAwLjc5MDA0IiB4bWw6c3BhY2U9InByZXNlcnZlIj4NCjxnIGlkPSJsb2dvIj4NCgk8Zz4NCgkJPGc+DQoJCQk8cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGNsaXAtcnVsZT0iZXZlbm9kZCIgZmlsbD0iI0ZGRkZGRiIgZD0iTTM1NC45Nzc1NCwxMTk1LjYyMzA1DQoJCQkJYzExLjM4NDc3LDAsMjIuMDEyNywzLjIzNzMsMzEuMDE3NTgsOC44Mzc4OWMxLjk0NjI5LDEuMjEwOTQsMi41ODQ5NiwzLjc0OTAyLDEuNDM4NDgsNS43MzQzOGwtNC45MzI2Miw4LjU0MTk5DQoJCQkJYy0zLjI3ODMyLDUuNjc5NjktMTAuMDMzMiw4LjM3Njk1LTE2LjMxNzM4LDYuNTAwOThjLTIuNzY0NjUtMC44MjUyLTUuNjkzMzYtMS4yNjg1NS04LjcyNjU2LTEuMjY4NTUNCgkJCQljLTE2LjgyOTEsMC0zMC40NzI2NiwxMy42NDM1NS0zMC40NzI2NiwzMC40NzI2NmMwLDE2LjgyODEzLDEzLjY0MzU1LDMwLjQ3MjY2LDMwLjQ3MjY2LDMwLjQ3MjY2DQoJCQkJYzMuMDMzMiwwLDUuOTYxOTEtMC40NDMzNiw4LjcyNjU2LTEuMjY4NTVjNi4yOTQ5Mi0xLjg3OTg4LDEzLjAzMzIsMC44MTE1MiwxNi4zMTczOCw2LjUwMDk4bDQuOTMxNjQsOC41NDE5OQ0KCQkJCWMxLjE0NzQ2LDEuOTg4MjgsMC41MTA3NCw0LjUyMzQ0LTEuNDM4NDgsNS43MzQzOGMtOS4wMDM5MSw1LjYwMTU2LTE5LjYzMTg0LDguODM3ODktMzEuMDE2Niw4LjgzNzg5DQoJCQkJYy0zMi40ODUzNSwwLTU4LjgxOTM0LTI2LjMzNDk2LTU4LjgxOTM0LTU4LjgxOTM0QzI5Ni4xNTgyLDEyMjEuOTU3MDMsMzIyLjQ5MjE5LDExOTUuNjIzMDUsMzU0Ljk3NzU0LDExOTUuNjIzMDUNCgkJCQlMMzU0Ljk3NzU0LDExOTUuNjIzMDV6IE03MDMuMjE0ODQsMTI1OS4xNzU3OGMtMTQuNTU5NTctOS44MTczOC0yMC4yMDMxMy0yMC4wMzIyMy0yMC4yMDMxMy0zMy4wODAwOA0KCQkJCWMwLTE4LjQ4OTI2LDE1LjcxNDg0LTI5Ljc2MzY3LDM4LjI2NjYtMjkuNzYzNjdjOS42NTcyMywwLDE4LjcyMTY4LDIuNTQyOTcsMjYuNTU5NTcsNi45OTQxNA0KCQkJCWMyLjA0OTgsMS4xNjQwNiwyLjc2MTcyLDMuNzgzMiwxLjU4MzAxLDUuODI0MjJsLTMuNDE3OTcsNS45MTk5MmMtMy4yNDcwNyw1LjYyNDAyLTkuOTA4Miw4LjMzMTA1LTE2LjE1MzMyLDYuNTQ4ODMNCgkJCQljLTIuNzIzNjMtMC43NzYzNy01LjU5ODYzLTEuMTkyMzgtOC41NzEyOS0xLjE5MjM4Yy0xMC40OTAyMywwLTExLjU5ODYzLDkuNTc2MTctNC44NTc0MiwxNC4xMjMwNWwyMy42ODY1MiwxNS45NzY1Ng0KCQkJCWM5Ljk5MDIzLDYuNzM4MjgsMTUuODk1NTEsMTcuMDY2NDEsMTUuODk1NTEsMjguNzE4NzVjMCwxOC43ODYxMy0xNS4wMDY4NCwzMy4zMDc2Mi0zOC4yNjc1OCwzMy4zMDc2Mg0KCQkJCWMtOS41MjI0NiwwLTE4LjU4Nzg5LTEuOTU3MDMtMjYuODE1NDMtNS40OTAyM2MtNy43ODEyNS0zLjMzOTg0LTEwLjkzMzU5LTEyLjc4MjIzLTYuNjk3MjctMjAuMTE4MTZsMy40ODczLTYuMDQxOTkNCgkJCQljMS4yMTM4Ny0yLjA5OTYxLDMuOTMxNjQtMi43NTk3Nyw1Ljk3NDYxLTEuNDU2MDVjNi44NTkzOCw0LjM4MjgxLDE2LjQ5MDIzLDcuNTk0NzMsMjQuNzU4NzksNy41OTQ3Mw0KCQkJCWMxMC41NDU5LDAsMTEuMzI4MTMtOS45NTg5OCwzLjc2NzU4LTE1LjA1NzYyTDcwMy4yMTQ4NCwxMjU5LjE3NTc4TDcwMy4yMTQ4NCwxMjU5LjE3NTc4eiBNOTg0LjYzMDg2LDEyMDIuMDAwOTgNCgkJCQljMC0yLjM0NzY2LDEuOTAzMzItNC4yNTE5NSw0LjI1MTk1LTQuMjUxOTVoOS45MjE4OGM3LjgyNzE1LDAsMTQuMTcyODUsNi4zNDU3LDE0LjE3Mjg1LDE0LjE3MzgzdjU3LjQwMTM3DQoJCQkJYzAsOC42MTAzNSw2Ljk4MDQ3LDE1LjU5MDgyLDE1LjU5MDgyLDE1LjU5MDgyczE1LjU5MDgyLTYuOTgwNDcsMTUuNTkwODItMTUuNTkwODJ2LTU3LjQwMTM3DQoJCQkJYzAtNy44MjgxMyw2LjM0NTctMTQuMTczODMsMTQuMTcyODUtMTQuMTczODNoOS45MjA5YzIuMzQ4NjMsMCw0LjI1MTk1LDEuOTA0Myw0LjI1MTk1LDQuMjUxOTV2NjcuMzIzMjQNCgkJCQljMCwyNC4yNjU2My0xOS42NzA5LDQzLjkzNzUtNDMuOTM2NTIsNDMuOTM3NXMtNDMuOTM3NS0xOS42NzE4OC00My45Mzc1LTQzLjkzNzVWMTIwMi4wMDA5OEw5ODQuNjMwODYsMTIwMi4wMDA5OHoNCgkJCQkgTTQ2Ni44NjkxNCwxMTk1LjYyMzA1YzMyLjQ4NDM4LDAsNTguODE4MzYsMjYuMzMzOTgsNTguODE4MzYsNTguODE5MzRjMCwzMi40ODQzOC0yNi4zMzM5OCw1OC44MTkzNC01OC44MTgzNiw1OC44MTkzNA0KCQkJCWMtMzIuNDg2MzMsMC01OC44MTkzNC0yNi4zMzQ5Ni01OC44MTkzNC01OC44MTkzNEM0MDguMDQ5OCwxMjIxLjk1NzAzLDQzNC4zODI4MSwxMTk1LjYyMzA1LDQ2Ni44NjkxNCwxMTk1LjYyMzA1DQoJCQkJTDQ2Ni44NjkxNCwxMTk1LjYyMzA1eiBNNDY2Ljg2OTE0LDEyMjUuMDMzMmMtMTYuMjQzMTYsMC0yOS40MTAxNiwxMy4xNjY5OS0yOS40MTAxNiwyOS40MDkxOA0KCQkJCXMxMy4xNjY5OSwyOS40MDgyLDI5LjQxMDE2LDI5LjQwODJjMTYuMjQxMjEsMCwyOS40MDgyLTEzLjE2NjAyLDI5LjQwODItMjkuNDA4MlM0ODMuMTEwMzUsMTIyNS4wMzMyLDQ2Ni44NjkxNCwxMjI1LjAzMzINCgkJCQlMNDY2Ljg2OTE0LDEyMjUuMDMzMnogTTU1Ni43MzI0MiwxMzExLjEzNDc3Yy0yLjM0NzY2LDAtNC4yNTE5NS0xLjkwMjM0LTQuMjUxOTUtNC4yNXYtOTQuOTYxOTENCgkJCQljMC03LjgyODEzLDYuMzQ1Ny0xNC4xNzM4MywxNC4xNzM4My0xNC4xNzM4M2gzLjk1ODk4YzQuNjI1LDAsOC45NTg5OCwyLjI1Njg0LDExLjYxMTMzLDYuMDQ1OWw0MS4xMjIwNyw1OC43NDcwN3YtNTAuNjE5MTQNCgkJCQljMC03LjgyODEzLDYuMzQ1Ny0xNC4xNzM4MywxNC4xNzI4NS0xNC4xNzM4M2g5LjkyMTg4YzIuMzQ3NjYsMCw0LjI1MTk1LDEuOTA0Myw0LjI1MTk1LDQuMjUxOTV2OTQuOTYwOTQNCgkJCQljMCw3LjgyOTEtNi4zNDU3LDE0LjE3Mjg1LTE0LjE3MzgzLDE0LjE3Mjg1aC0zLjk1ODk4Yy00LjYyNSwwLTguOTU4OTgtMi4yNTU4Ni0xMS42MTEzMy02LjA0NDkybC00MS4xMjIwNy01OC43NDYwOXY1MC42MTgxNg0KCQkJCWMwLDcuODI5MS02LjM0NTcsMTQuMTcyODUtMTQuMTcyODUsMTQuMTcyODVINTU2LjczMjQyTDU1Ni43MzI0MiwxMzExLjEzNDc3eiBNMTIxNS4wMjA1MSwxMjExLjkyMjg1DQoJCQkJYzAtNy44MjgxMyw2LjM0NTctMTQuMTczODMsMTQuMTcyODUtMTQuMTczODNoNTAuMzE1NDNjMi4zNDg2MywwLDQuMjUxOTUsMS45MDQzLDQuMjUxOTUsNC4yNTE5NXY1LjY2OTkyDQoJCQkJYzAsNy44MjcxNS02LjM0NTcsMTQuMTcyODUtMTQuMTcyODUsMTQuMTcyODVoLTYuMDI0NDF2NzUuMTE4MTZjMCw3LjgyOTEtNi4zNDU3LDE0LjE3Mjg1LTE0LjE3Mjg1LDE0LjE3Mjg1aC05LjkyMTg4DQoJCQkJYy0yLjM0ODYzLDAtNC4yNTE5NS0xLjkwMjM0LTQuMjUxOTUtNC4yNXYtODUuMDQxMDJoLTE1Ljk0NDM0Yy0yLjM0ODYzLDAtNC4yNTE5NS0xLjkwMzMyLTQuMjUxOTUtNC4yNTE5NVYxMjExLjkyMjg1DQoJCQkJTDEyMTUuMDIwNTEsMTIxMS45MjI4NXogTTc3Ni40NDkyMiwxMjExLjkyMjg1YzAtNy44MjgxMyw2LjM0NTctMTQuMTczODMsMTQuMTczODMtMTQuMTczODNoNTAuMzE0NDUNCgkJCQljMi4zNDk2MSwwLDQuMjUxOTUsMS45MDQzLDQuMjUxOTUsNC4yNTE5NXY1LjY2OTkyYzAsNy44MjcxNS02LjM0NTcsMTQuMTcyODUtMTQuMTcxODgsMTQuMTcyODVoLTYuMDI1Mzl2NzUuMTE4MTYNCgkJCQljMCw3LjgyOTEtNi4zNDU3LDE0LjE3Mjg1LTE0LjE3Mjg1LDE0LjE3Mjg1aC05LjkyMDljLTIuMzQ5NjEsMC00LjI1MTk1LTEuOTAyMzQtNC4yNTE5NS00LjI1di04NS4wNDEwMmgtMTUuOTQ1MzENCgkJCQljLTIuMzQ3NjYsMC00LjI1MTk1LTEuOTAzMzItNC4yNTE5NS00LjI1MTk1VjEyMTEuOTIyODVMNzc2LjQ0OTIyLDEyMTEuOTIyODV6IE05MjkuNjA0NDksMTI3Mi4wMjI0NmwyNi45NTgwMSwzMi4xMjc5Mw0KCQkJCWMyLjMxNDQ1LDIuNzU3ODEsMC4zNDM3NSw2Ljk4NDM4LTMuMjU2ODQsNi45ODQzOGgtMTkuNzA1MDhjLTQuMTg5NDUsMC04LjE2NTA0LTEuODUxNTYtMTAuODU3NDItNS4wNjA1NWwtMjIuNjgxNjQtMjcuMDMxMjUNCgkJCQl2MjcuODQxOGMwLDIuMzQ3NjYtMS45MDMzMiw0LjI1LTQuMjUxOTUsNC4yNWgtOS45MjA5Yy03LjgyNzE1LDAtMTQuMTcyODUtNi4zNDM3NS0xNC4xNzI4NS0xNC4xNzI4NXYtODUuMDM5MDYNCgkJCQljMC03LjgyODEzLDYuMzQ1Ny0xNC4xNzM4MywxNC4xNzI4NS0xNC4xNzM4M2gyOS43NjM2N2MyMi43MDAyLDAsNDEuMTAyNTQsMTcuMTMzNzksNDEuMTAyNTQsMzguMjY4NTUNCgkJCQlDOTU2Ljc1NDg4LDEyNTIuNTkwODIsOTQ1LjQzNjUyLDEyNjYuNzAyMTUsOTI5LjYwNDQ5LDEyNzIuMDIyNDZMOTI5LjYwNDQ5LDEyNzIuMDIyNDZ6IE05MDAuMDYxNTIsMTIyMS44NDM3NXYzMi41OTg2M2g4LjUwMzkxDQoJCQkJYzEwLjk1ODk4LDAsMTkuODQyNzctNy4yOTc4NSwxOS44NDI3Ny0xNi4yOTg4M2MwLTkuMDAxOTUtOC44ODM3OS0xNi4yOTk4LTE5Ljg0Mjc3LTE2LjI5OThIOTAwLjA2MTUyTDkwMC4wNjE1MiwxMjIxLjg0Mzc1eg0KCQkJCSBNMTE1OC4zNTkzOCwxMTk1LjYyMzA1YzExLjM4NDc3LDAsMjIuMDEyNywzLjIzNzMsMzEuMDE3NTgsOC44Mzc4OWMxLjk0NzI3LDEuMjEwOTQsMi41ODQ5NiwzLjc0OTAyLDEuNDM4NDgsNS43MzQzOA0KCQkJCWwtNC45MzI2Miw4LjU0MTk5Yy0zLjI3ODMyLDUuNjc5NjktMTAuMDMzMiw4LjM3Njk1LTE2LjMxNzM4LDYuNTAwOThjLTIuNzY0NjUtMC44MjUyLTUuNjkzMzYtMS4yNjg1NS04LjcyNTU5LTEuMjY4NTUNCgkJCQljLTE2LjgyOTEsMC0zMC40NzI2NiwxMy42NDM1NS0zMC40NzI2NiwzMC40NzI2NmMwLDE2LjgyODEzLDEzLjY0MzU1LDMwLjQ3MjY2LDMwLjQ3MjY2LDMwLjQ3MjY2DQoJCQkJYzMuMDMyMjMsMCw1Ljk2MDk0LTAuNDQzMzYsOC43MjU1OS0xLjI2ODU1YzYuMjk1OS0xLjg3OTg4LDEzLjAzMzIsMC44MTE1MiwxNi4zMTgzNiw2LjUwMDk4bDQuOTMwNjYsOC41NDE5OQ0KCQkJCWMxLjE0NzQ2LDEuOTg4MjgsMC41MTA3NCw0LjUyMzQ0LTEuNDM3NSw1LjczNDM4Yy05LjAwNDg4LDUuNjAxNTYtMTkuNjMyODEsOC44Mzc4OS0zMS4wMTc1OCw4LjgzNzg5DQoJCQkJYy0zMi40ODUzNSwwLTU4LjgxOTM0LTI2LjMzNDk2LTU4LjgxOTM0LTU4LjgxOTM0QzEwOTkuNTQwMDQsMTIyMS45NTcwMywxMTI1Ljg3NDAyLDExOTUuNjIzMDUsMTE1OC4zNTkzOCwxMTk1LjYyMzA1eiIvPg0KCQkJPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGZpbGw9IiMwMEZGREEiIGQ9Ik0xMzE4LjE5NzI3LDEyMDYuMDMyMjMNCgkJCQljMC03LjgyODEzLDYuMzQ1Ny0xNC4xNzM4MywxNC4xNzI4NS0xNC4xNzM4M2MyMC42NTYyNSwwLDQxLjMxMjUsMCw2MS45Njg3NSwwYzMuNDI5NjksMCw1LjQ1MDIsMy44ODA4NiwzLjQ4MzQsNi42OTA0Mw0KCQkJCWwtMTkuMjk2ODgsMjcuNTY3MzhjMTUuNTQyOTcsOC4zNzU5OCwyNi4xMDY0NSwyNC44MDA3OCwyNi4xMDY0NSw0My42OTUzMWMwLDI3LjM5NzQ2LTIyLjIwODk4LDQ5LjYwNjQ1LTQ5LjYwNjQ1LDQ5LjYwNjQ1DQoJCQkJYy0xNi42ODg0OCwwLTMxLjQ1MTE3LTguMjQwMjMtNDAuNDQzMzYtMjAuODc1OThjLTEuNDUwMi0yLjAzOTA2LTAuODMxMDUtNC44OTk0MSwxLjMzNTk0LTYuMTUyMzRsMTAuOTc3NTQtNi4zMzc4OQ0KCQkJCWM0Ljg4MTg0LTIuODE4MzYsMTAuOTc5NDktMi40NzU1OSwxNS41MTQ2NSwwLjg3MzA1YzMuNTI4MzIsMi42MDU0Nyw3Ljg5MTYsNC4xNDY0OCwxMi42MTUyMyw0LjE0NjQ4DQoJCQkJYzExLjc0MjE5LDAsMjEuMjU5NzctOS41MTg1NSwyMS4yNTk3Ny0yMS4yNTk3N3MtOS41MTc1OC0yMS4yNTk3Ny0yMS4yNTk3Ny0yMS4yNTk3N2gtMTUuMjE3NzcNCgkJCQljLTMuNDI5NjksMC01LjQ1MDItMy44ODA4Ni0zLjQ4NDM4LTYuNjkwNDNsMTguMTM1NzQtMjUuOTA4MmgtMzIuMDA5NzdjLTIuMzQ4NjMsMC00LjI1MTk1LTEuOTAzMzItNC4yNTE5NS00LjI1MTk1VjEyMDYuMDMyMjN6DQoJCQkJIi8+DQoJCTwvZz4NCgkJPGc+DQoJCQk8Zz4NCgkJCQk8cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGNsaXAtcnVsZT0iZXZlbm9kZCIgZmlsbD0iI0RBRThGNyIgZD0iTTg1MC4zOTU1MSw4NTcuNTkxOA0KCQkJCQljLTUwLjM1NjQ1LDAtOTQuMzI1Mi0yNy4zNTY0NS0xMTcuODUyNTQtNjguMDIwNTFsLTgwLjAzMDI3LDQ2LjIwNDFjLTQuNjU1MjcsMi42ODk0NS02LjEzMTg0LDguNzE4NzUtMy4yNDkwMiwxMy4yNTU4Ng0KCQkJCQljNDIuMjM3Myw2Ni40ODYzMywxMTYuNTMzMiwxMTAuNjA3NDIsMjAxLjEzMTg0LDExMC42MDc0MmM4OC4xMjU5OCwwLDE2NS4wNzEyOS00Ny44NzUsMjA2LjI0MzE2LTExOS4wMzYxM2wtODAuNDg3My00Ni40Njk3Mw0KCQkJCQljLTQuMzEzNDgtMi40OTAyMy05LjgwMTc2LTEuMjA1MDgtMTIuNTcwMzEsMi45MzU1NUM5MzkuMTc1NzgsODMzLjU2MjUsODk3LjU5MTgsODU3LjU5MTgsODUwLjM5NTUxLDg1Ny41OTE4DQoJCQkJCUw4NTAuMzk1NTEsODU3LjU5MTh6IE0xMTM2LjcyMTY4LDU1Ni4yMTc3N2M0LjYxNDI2LTIuNjYzMDksNi4xMTAzNS04LjYxOTE0LDMuMzEyNS0xMy4xNTEzNw0KCQkJCQljLTU5LjkxNTA0LTk3LjAzMDI3LTE2Ny4yMjQ2MS0xNjEuNjk0MzQtMjg5LjYzODY3LTE2MS42OTQzNGMtMTI1Ljg5MzU1LDAtMjM1LjgxMzQ4LDY4LjM5MjU4LTI5NC42MzM3OSwxNzAuMDQ5OA0KCQkJCQlsODAuMzc2OTUsNDYuNDA2MjVjNC4zOTc0NiwyLjUzOTA2LDEwLjAwMTk1LDEuMTQ5NDEsMTIuNzEwOTQtMy4xNDU1MQ0KCQkJCQljNDIuMTY0MDYtNjYuODUxNTYsMTE2LjY2ODk1LTExMS4yNjM2NywyMDEuNTQ1OS0xMTEuMjYzNjdjODguMTI1OTgsMCwxNjUuMDcxMjksNDcuODc1OTgsMjA2LjI0MzE2LDExOS4wMzYxMw0KCQkJCQlMMTEzNi43MjE2OCw1NTYuMjE3Nzd6Ii8+DQoJCQkJPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGZpbGw9IiNBNUJBQzgiIGQ9Ik04NTAuMzk1NTEsOTU5LjYzODY3DQoJCQkJCWMtODQuNTk4NjMsMC0xNTguODk0NTMtNDQuMTIxMDktMjAxLjEzMTg0LTExMC42MDc0MmMtMi44NzY5NS00LjUzMDI3LTEuMzk5NDEtMTAuNTcwMzEsMy4yNDkwMi0xMy4yNTU4Nmw4MC4wMzAyNy00Ni4yMDQxDQoJCQkJCWMtMTEuNTgxMDUtMjAuMDE2Ni0xOC4yMDk5Ni00My4yNTQ4OC0xOC4yMDk5Ni02OC4wNDE5OWMwLTc0Ljc4NTE2LDYwLjU1NzYyLTEzNi4wNjI1LDEzNi4wNjI1LTEzNi4wNjI1DQoJCQkJCWM0Ny4xOTYyOSwwLDg4Ljc4MDI3LDI0LjAyOTMsMTEzLjE4NTU1LDYwLjUyMjQ2YzIuNzY0NjUsNC4xMzM3OSw4LjI2MzY3LDUuNDIxODgsMTIuNTcwMzEsMi45MzU1NWw4MC40ODczLTQ2LjQ2OTczDQoJCQkJCWMtNDEuMTcxODgtNzEuMTYwMTYtMTE4LjExNzE5LTExOS4wMzYxMy0yMDYuMjQzMTYtMTE5LjAzNjEzYy04NC44NzY5NSwwLTE1OS4zODE4NCw0NC40MTIxMS0yMDEuNTQ1OSwxMTEuMjYzNjcNCgkJCQkJYy0yLjcwNjA1LDQuMjkxMDItOC4zMTgzNiw1LjY4MTY0LTEyLjcxMDk0LDMuMTQ1NTFsLTgwLjM3Njk1LTQ2LjQwNjI1DQoJCQkJCWMtMjguOTUyMTUsNTAuMDQwMDQtNDUuNTIzNDQsMTA4LjEzOTY1LTQ1LjUyMzQ0LDE3MC4xMDc0MmMwLDE4Ni45NjM4NywxNTEuMzk0NTMsMzQwLjE1NzIzLDM0MC4xNTcyMywzNDAuMTU3MjMNCgkJCQkJYzEyMi40MTQwNiwwLDIyOS43MjM2My02NC42NjQwNiwyODkuNjM4NjctMTYxLjY5NTMxYzIuNzk0OTItNC41MjYzNywxLjI5NDkyLTEwLjQ5MDIzLTMuMzEyNS0xMy4xNTEzN2wtODAuMDgzMDEtNDYuMjM3Mw0KCQkJCQlDMTAxNS40NjY4LDkxMS43NjM2Nyw5MzguNTIxNDgsOTU5LjYzODY3LDg1MC4zOTU1MSw5NTkuNjM4Njd6Ii8+DQoJCQk8L2c+DQoJCQk8cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGNsaXAtcnVsZT0iZXZlbm9kZCIgZmlsbD0iIzAwRkZEQSIgZD0iTTExMzcuMTg1NTUsNzU4LjExMzI4di03My4xNjc5N2wtNjMuMzY1MjMsMzYuNTgzOTgNCgkJCQlMMTEzNy4xODU1NSw3NTguMTEzMjhMMTEzNy4xODU1NSw3NTguMTEzMjh6IE0xMDI2LjU3NjE3LDcwNS4xNjQwNmwxMjAuMDU4NTktNjkuMzE2NDENCgkJCQljMTIuNTY4MzYtNy4yNTU4NiwyOC4zNDQ3MywxLjg1MjU0LDI4LjM0NTcsMTYuMzY2MjF2MTM4LjYzMDg2Yy0wLjAwMDk4LDE0LjUxMjctMTUuNzc3MzQsMjMuNjIyMDctMjguMzQ1NywxNi4zNjYyMQ0KCQkJCWwtMTIwLjA1ODU5LTY5LjMxNjQxQzEwMTQuMDI4MzIsNzMwLjY0OTQxLDEwMTQuMDI4MzIsNzEyLjQwOTE4LDEwMjYuNTc2MTcsNzA1LjE2NDA2eiIvPg0KCQk8L2c+DQoJPC9nPg0KPC9nPg0KPC9zdmc+DQo=").then(tex=>{if(this._splashState==="done")renderer.DeleteTexture(tex);else this._splashTextures.logo=tex}).catch(err=>console.warn("Failed to load splash image: ",err));this._LoadBitmapSplashImage("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAABABAMAAACekdKMAAAAMFBMVEUAAAByfYZyfYZyfYZyfYZyfYZyfYZyfYZyfYZyfYZyfYZyfYZyfYZyfYZyfYZyfYYgo7vbAAAAD3RSTlMAESIzRFVmd4iZqrvM3e5GKvWZAAAFX0lEQVR42u2asW7bVhSGP0qWpUi2oM3tUFhbgAJJtBUdWvsNrLlD1AcoILZBlgaNXKBAR/sN5Ewd6fYF5HbJKAdB0FFKu5d1ZEeSJfPvcC8pyrWTDi5MgPwXCRQp6H4895z/HAoyZcqUKVOmTJkyJU8D7dt3d6QMQIK1LqPzRykHIL1KOwA9SzuAeS2dAC4A+MSXDtIMgJL0NtUA2IvepRTAutRINYCi5KYaQE7mN294Ch5ff4HzRPoprBfOU70B2Ojp/Gt7bKOnqXsJQKGj4FHSAWAAfBi5onWdA9Ay5SEvbYPTlaQpQFfHLek0umY/DCQpaC4ByPcl6RdomyvB13ESARzAim9MwQEUFdjs+NqsLAA+Mx//BnT1StIp5AfGR9QBepKk8RKAHUnSRYOq/cqVG91uN7oFdqwrmkHeZkVfZwBlnUPe8rmoQVd/GQCf22teAOXIV8UARJ+XpKatuY3EAShILjlf+obVnrQLvlwT+lOATb2F+9Jzch1pH7rS3AVyvuYud81pHek5zneXAIzrfCFNydvD65onLwdUpCYV6WdgVTqFrg7N3QpMKjgBT1MgN9Ab6Eq7JjS0D9yT6jh+mB/iAGY1oC1t09cQYEvj5AFoKYAde2vaurBLZk0mbvd0xIr1y/c1ha5NkjvmNedrn6I9obwE4FebHffpmO3UMcUjUQBWpTH07C8rS9ts6gzY0kC7QF8uZQW1KCF27bmeSZJ0NGRNQR3A8eMAtq01eM0DEyB9HSUNwN2+9AInvHE5aZeKJkBHDzUER2qwqQm2JDbo6m8Ax+4EtjRiK6xzVxihjs6oKDDf7iYHQKSgQcFmaXOPipoD/aCsERQUQEujsI67IYBCmNGrGtMyIX4lgC2NWZWaUJRqCQTwEkrRL9vTCXmphqNpQRMoaQIds2YYaDcEUAwXuK4JHZ1cC6CqqQ2ximYJHIiMgXKUEtsaQV9Nijpz/Dms6Qy6ipV5C2BR5zWla7L8lQDWNANPQ1tREwZg9tiUwrA+7+gU9rRLRUM8NdjU69DmLQOoLAM4vhZARTPMHmmHcZIsK0w8Nnd0Ci0N2dQBLbmmI4gBOLwCwAzvfQCqmoJ3o8On/xFAVSPaarKpI/bk/gcA742AkgIcP0y1iQNwKQeUNcZTjbLe0FcdvHj9tgDKcVv7rhywbhuMZsG6iQQCWK4CrOrc8c9hVWNHc2AvXF8MQMl2eLbWv7sKwED7d0KzkDwAqzEfcAyOgoLegqNZwZqi0b8AFOOd3ft8AHQ0rIYnJQ9AbskJQl+f6gTw9IFGl5sYCyAft3WhVbzOCcIDne3E4yhZAKJewBr4jp7qEOjoKw2BdWv14wAY6I/o2Jrd3lf3AkOgoume9c5JBNC2Ga1lDm/JzAQ21dOBCXeTBe+5CwAde03ud67pBl9E3SAUFQwskSQCWDPzgILMNq1KqttS1wScgRl8FfzzBYCPzISMhzrA8c0e8JYAzOtmHlA3vdONPoC4YQB2IuTZG1mSubtF2fKwJU22KfZ0EXWD5CX9AE+kl9C+eiLUMBMhy2aSXADxmaCJhLFteWdhmTD6cxEBtBftZKwzWAC4iM0MoaV4KUkcgNhU2Cx8ZJPjOKxz4YR3AaCwaCfBM51VLwZgZqfCdWsHkjMNuQIAHy/9WyK0fpEByJkFfh+rAuE1k1oUI0GzGwMwNc8FnkVbwk0ygOUnQx1bsR5EDzKcb6WJyxIANjzpx/B9X1OXJQBLT4ZWTDJMr/LJGYnfjkrJGYnfjqoJmobcito6TDeAvr5M9fqLSZqG3IIKXrpzoKTE/DXitgAEjZQDeJnqFNjVczJlypQpU6Yb0D8QEXpo1mjM/QAAAABJRU5ErkJggg==").then(tex=>
-{if(this._splashState==="done")renderer.DeleteTexture(tex);else this._splashTextures.powered=tex}).catch(err=>console.warn("Failed to load splash image: ",err));this._LoadBitmapSplashImage("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAABABAMAAACekdKMAAAAMFBMVEUAAAByfYZyfYZyfYZyfYZyfYZyfYZyfYZyfYZyfYZyfYZyfYZyfYZyfYZyfYZyfYYgo7vbAAAAD3RSTlMAdxHdu4hmVZnuRMwzqiLYE4y2AAAFw0lEQVR42u2Yy+9LQRTHp6Xq0VIkXkFvwkYslAWJiGJj2a6sJJe/oF3YWGElEQmxkYi4ErFWNpatWFmIx9Lm1sJCLKgqraqv82h726l6hOuRzDf53TtnOr+ZOZ+ZOffca5ycnJycnJycnJycnJycnJz+pi7g2G9osxjvzX8qB8ABcAAcgH8XwDa85dspNOiaRDuAR4U0PnHtDuyy7IJRJS6gvVmL6TywVkp4ZxIhulUxFvlaXQTrgEHbnMDH5XRjlXCdb+uAnc2ojWgFFTYBZ8e9tzcaswAk6v/3K4sPfPNRFj87IXj+KXQUS9m2jXoH1lMuLq2DtEcAtNMBT9PjanFq7ySAhbABVEAaeDaAwkk2D7GRqctAMQJIq2sBauLnB/VxCfqKpWrbRhSC1W5SMQ9RTgBUwKpF1ccmAIQ2gCxE+20Au9nSESvDgeIDkJSBMpA9vgyXdsj0H0GORL3n2fbwPOKoSQS4Q2cBOGzSJbQYAHDbZEI+rEuBcyZRlF71fIP/x0wBuIBOw6xH3xu2GQFAP2cegmvSwHkeqBZjECzB46UXD3bg8UKJCT6QYzgDY9uiU7hC11doERq6MAZ2CPJ7ipEulOrteDcB4KOZBpBG7zrV1JGzATzmIdnrl/go3bRiBJBHlZc+6ItjuQQ+yFLz8Gka2LZFRVTFGdoQJQ0LPodHnXkS8AjlRWkBLwKQswAs0PDzGpcsAAMNuG+5WgdqxwjgEcp8qcBjN5oZdPhEvOfhU/hsbJuVloWV6WWgp2IBLxXQNEwLDfKqoMXrEQBjATiFA3qePlgAZJRl+EStdaAQjfgALOC1zfeX8ALV+7S69JdALWjxHGqztmxyMnTD6OOBWvAdGDkn60c6vrI5H4CPnOJsWQDe8G0hIU0MB8ojFx+AFAeqeitLy5FkL3w0yNNcSOx3oDxjjxaH9XxldZluY5NBfwrAQvQbRjQXAO8UqVq5dh6A7HCgWzgdFwBdgOX4lMZbTndkWWkDN07Bk+zItllLdHm1+FkLwBSADNDf8B0AnGOp5gFYgJEexwcgGQx4iyeD9ybFkWsbDZbv0+2Y8XvGtqMpWsUimpMAzA1AUrj5ALjm2wCoONKB+ACYsEeDlU04MMs4imeJQqljslSuD4xl/zgAsx6ku/8DgDwaO9AwFU56qhzOPiXpKCzCpSSdb8v+CQDmXshb99cARAPFCOA1chWaFXlP55yn2FqEgiFvOSzYtmiJzisKB7MxQPS8iO63YsD3AHDv8QPgjR92eKuf9vts1wdZjvZhN4XajD35FNDiR7ln0LYBaILY+OZT4DsA+BkTP4AUrgXkxSJcDFps+72X7EGlx6mBbU/lAbdQjvKA7hSAlSuHxdw0gORsHrAUnXkAUuj+AQAZdHGRp9bShX2ECz1JRSk4zNhRJqj5SZQJfpgCUNS2eRsAP/usTDAxPxFKA834AZgAOM1z6qGgxxpdmUDQNjP25LtAsojxu0AehSkAF6RLXWR/EkAdVYEevQtswVtpMwuAB1JGh2jbxQcgBKrig/qSxTD6o2Nm7fttSY6uUnErV+jb4CJyaArAI5luJkCDOy5HAPISSB5A3wYbhJERahvtPALAAw2EI9Vzsh2TTuk23qEceN9d4vVVv227hNroe0CRi/o9IKTZTQFIAc/M8jwGEiouG2/042u8u25uAuPvAavRH7XhzqcBpICdRpssRa+aNLFoh2JeyBzU08fih/ht20WZXghW34s+/ZQnAKhzojsSH4CC/sjARPKamLXacOfTAIwfNSkCbROLluG9Tm2gdl3PY178tu2SBIpFQ6fHH//2GAvAogCkjtGDEAFQYPsu6DdBqw11bgFIF8dNHsQGIEFRSDOe0RS9YYJk23JMrw+/Cr9bFX0VXmNsACbhA088qXhBrMYAlq8Gjhh//FX4YNSGO7cASO9n9B99AuHk5OTk5OTk5OTk5OTk5OTk5OT0VX0B7+fX+9cwWYYAAAAASUVORK5CYII=").then(tex=>{if(this._splashState==="done")renderer.DeleteTexture(tex);else this._splashTextures.website=tex}).catch(err=>console.warn("Failed to load splash image: ",err))}}async _LoadSvgSplashImage(url){url=(new URL(url,this._runtime.GetRuntimeBaseURL())).toString();const blob=
+0){const loadingLogoAsset=this._runtime.GetLoadingLogoAsset();if(loadingLogoAsset)loadingLogoAsset.LoadStaticTexture(renderer).catch(err=>console.warn(`[C3 runtime] Failed to create texture for loading logo: `,err))}else if(loaderStyle===4){this._LoadSvgSplashImage("splash-images/splash-logo.svg").then(tex=>{if(this._splashState==="done")renderer.DeleteTexture(tex);else this._splashTextures.logo=tex}).catch(err=>console.warn("Failed to load splash image: ",err));this._LoadBitmapSplashImage("splash-images/splash-poweredby-512.png").then(tex=>
+{if(this._splashState==="done")renderer.DeleteTexture(tex);else this._splashTextures.powered=tex}).catch(err=>console.warn("Failed to load splash image: ",err));this._LoadBitmapSplashImage("splash-images/splash-website-512.png").then(tex=>{if(this._splashState==="done")renderer.DeleteTexture(tex);else this._splashTextures.website=tex}).catch(err=>console.warn("Failed to load splash image: ",err))}}async _LoadSvgSplashImage(url){url=(new URL(url,this._runtime.GetRuntimeBaseURL())).toString();const blob=
 await C3.FetchBlob(url);const drawable=await this._runtime.RasterSvgImage(blob,2048,2048);return await this.GetRenderer().CreateStaticTextureAsync(drawable,{mipMapQuality:"high"})}async _LoadBitmapSplashImage(url){url=(new URL(url,this._runtime.GetRuntimeBaseURL())).toString();const blob=await C3.FetchBlob(url);return await this.GetRenderer().CreateStaticTextureAsync(blob,{mipMapQuality:"high"})}HideCordovaSplashScreen(){this._runtime.PostComponentMessageToDOM("runtime","hide-cordova-splash")}StartLoadingScreen(){this._loaderStartTime=
 Date.now();this._runtime.Dispatcher().addEventListener("loadingprogress",this._loadingprogress_handler);this._rafId=requestAnimationFrame(()=>this._DrawLoadingScreen());const loaderStyle=this._runtime.GetLoaderStyle();if(loaderStyle!==3)this.HideCordovaSplashScreen()}async EndLoadingScreen(){const renderer=this.GetRenderer();this._loadingProgress=1;const loaderStyle=this._runtime.GetLoaderStyle();if(loaderStyle===4)await this._splashDonePromise;this._splashDoneResolve=null;this._splashDonePromise=
 null;if(this._rafId!==-1){cancelAnimationFrame(this._rafId);this._rafId=-1}this._runtime.Dispatcher().removeEventListener("loadingprogress",this._loadingprogress_handler);this._loadingprogress_handler=null;if(this._percentText){this._percentText.Release();this._percentText=null}this._runtime.ReleaseLoadingLogoAsset();renderer.Start();if(this._splashTextures.logo){renderer.DeleteTexture(this._splashTextures.logo);this._splashTextures.logo=null}if(this._splashTextures.powered){renderer.DeleteTexture(this._splashTextures.powered);
